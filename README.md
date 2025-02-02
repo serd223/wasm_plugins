@@ -4,7 +4,7 @@ A plugin system I wrote to use in my own apps where I need a simple plugin syste
 ## Repository structure
 The `embed` crate is both a working binary example of the system in action and is also a library that contains the `Plugs` struct which is the main entry point of the system.
 
-The `plug[n]` directories contain the source code of their respective example plugins.
+The `plugs` directory contains the source code of 5 example plugins. Plugins 1-4 are written in Rust and `plug5` is written in C.
 
 ## Plugin structure
 Each plugin consists of a single .wasm file. The plugin's file name is used to refer to the plugin in code. (If the plugin's file name is `plug.wasm`, it will be referred to as `plug`)
