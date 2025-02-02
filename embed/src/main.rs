@@ -16,41 +16,20 @@ fn main() -> wasmtime::Result<()> {
     plugs.link()?;
     println!("\n[INFO]: Linking is complete.\n");
 
-    if let Some(plug1) = plugs.items.get_mut("plug1") {
-        let plug1_run = plug1
-            .instance
-            .get_typed_func::<i32, ()>(&mut plugs.store, "plug1")?;
-        println!("[INFO]: calling plug1 with args: 10");
-        plug1_run.call(&mut plugs.store, 10)?;
-    }
-    if let Some(plug2) = plugs.items.get_mut("plug2") {
-        let plug2_run = plug2
-            .instance
-            .get_typed_func::<i32, ()>(&mut plugs.store, "plug2")?;
-        println!("\n[INFO]: calling plug2 with args: 10");
-        plug2_run.call(&mut plugs.store, 10)?;
-    }
-    if let Some(plug3) = plugs.items.get_mut("plug3") {
-        let plug3_run = plug3
-            .instance
-            .get_typed_func::<i32, ()>(&mut plugs.store, "plug3")?;
-        println!("\n[INFO]: calling plug3 with args: 10");
-        plug3_run.call(&mut plugs.store, 10)?;
-    }
-    if let Some(plug4) = plugs.items.get_mut("plug4") {
-        let plug4_run = plug4
-            .instance
-            .get_typed_func::<i32, ()>(&mut plugs.store, "plug4")?;
-        println!("\n[INFO]: calling plug4 with args: 10");
-        plug4_run.call(&mut plugs.store, 10)?;
-    }
-    if let Some(plug5) = plugs.items.get_mut("plug5") {
-        let plug5_run = plug5
-            .instance
-            .get_typed_func::<(i32, i32), ()>(&mut plugs.store, "hello_from_c")?;
-        println!("\n[INFO]: calling plug5 with args: (10, 20)");
-        plug5_run.call(&mut plugs.store, (10, 20))?;
-    }
+    println!("\n[INFO]: calling plug1.plug1 with args: 10");
+    plugs.call::<_, ()>("plug1", "plug1", 10i32)?;
+
+    println!("\n[INFO]: calling plug2.plug2 with args: 10");
+    plugs.call::<_, ()>("plug2", "plug2", 10i32)?;
+
+    println!("\n[INFO]: calling plug3.plug3 with args: 10");
+    plugs.call::<_, ()>("plug3", "plug3", 10i32)?;
+
+    println!("\n[INFO]: calling plug4.plug4 with args: 10");
+    plugs.call::<_, ()>("plug4", "plug4", 10i32)?;
+
+    println!("\n[INFO]: calling plug5.hello_from_c with args: (10, 20)");
+    plugs.call::<_, ()>("plug5", "hello_from_c", (10i32, 20i32))?;
 
     Ok(())
 }

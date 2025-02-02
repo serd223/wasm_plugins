@@ -1,6 +1,8 @@
 use std::{collections::HashMap, path::Path};
 
-use wasmtime::{Engine, Instance, Linker, Module, Store, UnknownImportError};
+use wasmtime::{
+    Engine, Instance, Linker, Module, Store, TypedFunc, UnknownImportError, WasmParams, WasmResults,
+};
 
 mod plugs_core {
     pub fn link_core(linker: &mut wasmtime::Linker<()>) -> wasmtime::Result<()> {
@@ -20,8 +22,8 @@ mod plugs_core {
 }
 
 pub struct Plug {
-    module: Module,
-    linker: Linker<()>,
+    pub module: Module,
+    pub linker: Linker<()>,
     pub instance: Instance,
 }
 
@@ -29,8 +31,8 @@ pub struct Plug {
 pub struct Plugs<'a> {
     pub store: Store<()>,
     pub items: HashMap<&'a str, Plug>,
-    order: Vec<String>,
-    deps: HashMap<String, Vec<String>>,
+    pub order: Vec<String>,
+    pub deps: HashMap<String, Vec<String>>,
 }
 
 impl<'a> Plugs<'a> {
@@ -40,6 +42,7 @@ impl<'a> Plugs<'a> {
             ..Default::default()
         }
     }
+
     /// Add plug (without linking except the core library)
     pub fn add(&mut self, file_path: &'a str, engine: &Engine) -> wasmtime::Result<()> {
         let fp = Path::new(file_path);
@@ -144,7 +147,7 @@ impl<'a> Plugs<'a> {
                         }
                     }
                 } else {
-                    panic!("[Plugs::link]: {dep} is not a valid import.");
+                    return Err(wasmtime::Error::msg(format!("{dep} is not a valid import")));
                 }
             }
             if deps.len() > 0 {
@@ -153,5 +156,40 @@ impl<'a> Plugs<'a> {
             }
         }
         Ok(())
+    }
+
+    /// Convenience function for getting and calling function in a plugin
+    pub fn call<P: WasmParams, R: WasmResults>(
+        &mut self,
+        plug: &str,
+        func: &str,
+        params: P,
+    ) -> wasmtime::Result<R> {
+        let f = self.get_func(plug, func)?;
+        f.call(&mut self.store, params)
+    }
+
+    /// Looks up a function in the specified plugin
+    pub fn get_func<P: WasmParams, R: WasmResults>(
+        &mut self,
+        plug: &str,
+        func: &str,
+    ) -> Result<TypedFunc<P, R>, wasmtime::Error> {
+        // TODO: Store initial exports of plugins before linking and use that as a lookup table in this function
+        if let Some(p) = self.items.get_mut(plug) {
+            p.instance.get_typed_func::<P, R>(&mut self.store, func)
+        } else {
+            Err(wasmtime::Error::msg(format!(
+                "Couldn't find function {func} in plugin {plug}."
+            )))
+        }
+    }
+
+    pub fn get_plug_mut(&mut self, name: &str) -> Option<&mut Plug> {
+        self.items.get_mut(name)
+    }
+
+    pub fn get_plug(&self, name: &str) -> Option<&Plug> {
+        self.items.get(name)
     }
 }
