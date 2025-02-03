@@ -6,18 +6,17 @@ use wasmtime::{
 
 mod plugs_core {
     pub fn link_core(linker: &mut wasmtime::Linker<()>) -> wasmtime::Result<()> {
-        linker.func_wrap("env", "get_state", || 12)?;
-        linker.func_wrap("env", "draw", |x: i32, y: i32| {
-            draw(x as usize, y as usize);
-        })?;
         linker.func_wrap("env", "print", print)?;
+        linker.func_wrap("env", "print2", print2)?;
         Ok(())
     }
-    pub fn draw(x: usize, y: usize) {
-        println!("[plugs_core::draw]: Drawing at {x},{y}");
-    }
+
     pub fn print(a: i32) {
         println!("[plugs_core::print]: {a}");
+    }
+
+    pub fn print2(x: i32, y: i32) {
+        println!("[plugs_core::print2]: {x},{y}");
     }
 }
 

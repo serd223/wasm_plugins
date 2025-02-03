@@ -1,6 +1,6 @@
 // plug name is inferred from the file name as plug3
 extern "C" {
-    fn draw(x: usize, y: usize);
+    fn print2(x: usize, y: usize);
     fn plug2(a: i32);
     fn print(a: i32);
     fn add(a: i32, b: i32) -> i32;
@@ -16,5 +16,5 @@ pub unsafe extern "C" fn plug3(a: i32) {
     plug2(a);
     let n = a * a + 2 * a;
     print(add(a, n));
-    draw(n as usize, a as usize);
+    print2(n as usize, a as usize);
 }
