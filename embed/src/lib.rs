@@ -4,41 +4,48 @@ use wasmtime::{
     Engine, Instance, Linker, Module, Store, TypedFunc, UnknownImportError, WasmParams, WasmResults,
 };
 
-mod plugs_core {
-    pub fn link_core(linker: &mut wasmtime::Linker<()>) -> wasmtime::Result<()> {
-        linker.func_wrap("env", "print", print)?;
-        linker.func_wrap("env", "print2", print2)?;
-        Ok(())
-    }
-
-    pub fn print(a: i32) {
-        println!("[plugs_core::print]: {a}");
-    }
-
-    pub fn print2(x: i32, y: i32) {
-        println!("[plugs_core::print2]: {x},{y}");
-    }
-}
-
 pub struct Plug {
     pub module: Module,
     pub linker: Linker<()>,
     pub instance: Instance,
 }
 
-#[derive(Default)]
-pub struct Plugs<'a> {
+pub struct PlugsLinker<'a>(&'a mut Linker<()>);
+
+impl PlugsLinker<'_> {
+    pub fn define_fn<Params, Args>(
+        &mut self,
+        name: &str,
+        func: impl wasmtime::IntoFunc<(), Params, Args>,
+    ) -> wasmtime::Result<()> {
+        self.0.func_wrap("env", name, func)?;
+        Ok(())
+    }
+}
+
+pub struct Plugs<'a, F>
+where
+    F: Fn(PlugsLinker) -> wasmtime::Result<()>,
+{
     pub store: Store<()>,
     pub items: HashMap<&'a str, Plug>,
     pub order: Vec<String>,
     pub deps: HashMap<String, Vec<String>>,
+    core_linker: Option<F>,
 }
 
-impl<'a> Plugs<'a> {
-    pub fn new(engine: &Engine) -> Self {
+impl<'a, F> Plugs<'a, F>
+where
+    F: Fn(PlugsLinker) -> wasmtime::Result<()>,
+{
+    /// Create a new `Plugs` with a `wasmtime::Engine` and an optional core linking function if you want to have core functions for your plugins
+    pub fn new(engine: &Engine, core_linker: Option<F>) -> Self {
         Self {
             store: Store::new(engine, ()),
-            ..Default::default()
+            core_linker,
+            items: HashMap::new(),
+            order: Vec::new(),
+            deps: HashMap::new(),
         }
     }
 
@@ -55,8 +62,10 @@ impl<'a> Plugs<'a> {
         linker.allow_shadowing(true);
         linker.define_unknown_imports_as_default_values(&module)?;
 
-        // Link core library
-        plugs_core::link_core(&mut linker)?;
+        // Link core library (optional)
+        if let Some(f) = &self.core_linker {
+            f(PlugsLinker(&mut linker))?;
+        }
 
         let instance = match linker.instantiate(&mut self.store, &module) {
             Ok(i) => i,

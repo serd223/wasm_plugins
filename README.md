@@ -9,7 +9,7 @@ The `plugs` directory contains the source code of 5 example plugins. Plugins 1-4
 ## Plugin structure
 Each plugin consists of a single .wasm file. The plugin's file name is used to refer to the plugin in code. (If the plugin's file name is `plug.wasm`, it will be referred to as `plug`)
 
-There are some 'core' functions exported by `embed/src/lib.rs` which can be accessed by forward declaring them in your plugin source code. (see the example plugins)
+There are some example `core` functions exported by `embed/src/main.rs` which can be accessed by forward declaring them in your plugin source code. (see the example plugins)
 
 In order to import from another plugin, you first need to export a special function named `deps` with the following signature:
 ```rs

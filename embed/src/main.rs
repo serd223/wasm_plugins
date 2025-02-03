@@ -1,9 +1,27 @@
 use embed::Plugs;
 use wasmtime::*;
 
+mod my_core {
+    use embed::PlugsLinker;
+
+    pub fn link(mut linker: PlugsLinker) -> wasmtime::Result<()> {
+        linker.define_fn("print", print)?;
+        linker.define_fn("print2", print2)?;
+        Ok(())
+    }
+
+    fn print(a: i32) {
+        println!("[core::print]: {a}");
+    }
+
+    fn print2(x: i32, y: i32) {
+        println!("[core::print2]: {x},{y}");
+    }
+}
+
 fn main() -> wasmtime::Result<()> {
     let engine = Engine::default();
-    let mut plugs = Plugs::new(&engine);
+    let mut plugs = Plugs::new(&engine, Some(my_core::link));
 
     // Load order is important and circular dependencies are disallowed
     plugs.add("../plug1.wasm", &engine)?;
