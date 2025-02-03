@@ -1,13 +1,15 @@
 use std::{collections::HashMap, path::Path};
 
-use wasmtime::{
-    Engine, Instance, Linker, Module, Store, TypedFunc, UnknownImportError, WasmParams, WasmResults,
-};
+use wasmtime::{Engine, Instance, Linker, Module, Store, TypedFunc, WasmParams, WasmResults};
 
 pub struct Plug {
     pub module: Module,
     pub linker: Linker<()>,
     pub instance: Option<Instance>,
+    pub deps: Vec<String>,
+}
+
+pub struct PlugMetadata {
     pub deps: Vec<String>,
 }
 
@@ -50,20 +52,16 @@ where
 
     /// Extract metadata from the specified module by instantiating a temporary instance and running the
     /// necessary reserved functions (such as `deps`) for metadata extraction.
-    pub fn extract_metadata(&mut self, engine: &Engine, module: &Module) -> Vec<String> {
+    pub fn extract_metadata(
+        &mut self,
+        engine: &Engine,
+        module: &Module,
+    ) -> wasmtime::Result<PlugMetadata> {
         let mut linker = Linker::new(engine);
         linker.allow_shadowing(true);
-        linker
-            .define_unknown_imports_as_default_values(&module)
-            .unwrap();
+        linker.define_unknown_imports_as_default_values(&module)?;
 
-        let instance = match linker.instantiate(&mut self.store, &module) {
-            Ok(i) => i,
-            Err(e) => {
-                let e: UnknownImportError = e.downcast().unwrap();
-                panic!("Error: {e:?}");
-            }
-        };
+        let instance = linker.instantiate(&mut self.store, &module)?;
 
         // TODO: The plugin name could also be extracted in a similar way instead of
         // relying on the file name. The current file name approach makes the system simpler
@@ -72,18 +70,17 @@ where
         // Extract dependencies (optional)
         let mut res = Vec::new();
         if let Ok(deps_fn) = instance.get_typed_func::<(), u32>(&mut self.store, "deps") {
-            let mut deps_ptr = deps_fn.call(&mut self.store, ()).expect(&format!(
-                "Call to `deps` function failed in module {:?}",
-                module.name()
-            ));
-            let memory = instance
-                .get_memory(&mut self.store, "memory")
-                .expect("No 'memory' export");
+            let mut deps_ptr = deps_fn.call(&mut self.store, ())?;
+            let memory = {
+                if let Some(m) = instance.get_memory(&mut self.store, "memory") {
+                    m
+                } else {
+                    return Err(wasmtime::Error::msg("Couldn't find 'memory' export"));
+                }
+            };
             let mut deps_buf = vec![0u8];
             res.push(String::new());
-            memory
-                .read(&mut self.store, deps_ptr as usize, &mut deps_buf)
-                .unwrap();
+            memory.read(&mut self.store, deps_ptr as usize, &mut deps_buf)?;
             while deps_buf[0] != 0 {
                 let c = deps_buf[0] as char;
                 if c == ';' {
@@ -92,12 +89,10 @@ where
                     res.last_mut().unwrap().push(c);
                 }
                 deps_ptr += 1;
-                memory
-                    .read(&mut self.store, deps_ptr as usize, &mut deps_buf)
-                    .unwrap();
+                memory.read(&mut self.store, deps_ptr as usize, &mut deps_buf)?;
             }
         }
-        res
+        Ok(PlugMetadata { deps: res })
     }
 
     /// Add plug (without linking except the core library)
@@ -110,7 +105,7 @@ where
         let name = &name[..len - ext_len - 1];
         let module = Module::from_file(engine, file_path)?;
 
-        let deps = self.extract_metadata(engine, &module);
+        let metadata = self.extract_metadata(engine, &module)?;
 
         let mut linker = Linker::new(engine);
         linker.allow_shadowing(true);
@@ -125,7 +120,7 @@ where
                 module,
                 linker,
                 instance: None,
-                deps,
+                deps: metadata.deps,
             },
         );
         self.order.push(name.to_string());
