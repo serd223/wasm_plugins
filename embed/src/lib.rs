@@ -5,19 +5,6 @@ use wasmtime::{
     WasmParams, WasmResults,
 };
 
-const RESERVED_EXPORTS: &[&str] = &[
-    "memory",
-    "__data_end",
-    "__heap_base",
-    "__wasm_call_ctors",
-    "__dso_handle",
-    "__global_base",
-    "__memory_base",
-    "__table_base",
-    "deps",
-    "name",
-];
-
 pub struct Plug {
     pub module: Module,
     pub linker: Linker<()>,
@@ -78,7 +65,6 @@ where
         module: &Module,
     ) -> wasmtime::Result<PlugMetadata> {
         let mut linker = Linker::new(engine);
-        linker.allow_shadowing(true);
 
         if let Some(f) = &self.core_linker {
             f(PlugsLinker(&mut linker))?;
@@ -142,11 +128,7 @@ where
                 memory.read(&mut self.store, deps_ptr as usize, &mut deps_buf)?;
             }
         }
-        let exports = module
-            .exports()
-            .map(|e| e.name().to_string())
-            .filter(|n| !RESERVED_EXPORTS.contains(&n.as_str()))
-            .collect();
+        let exports = module.exports().map(|e| e.name().to_string()).collect();
         Ok(PlugMetadata {
             deps,
             exports,
@@ -167,7 +149,6 @@ where
         let metadata = self.extract_metadata(engine, &module)?;
 
         let mut linker = Linker::new(engine);
-        linker.allow_shadowing(true);
 
         // Link core library (optional)
         if let Some(f) = &self.core_linker {
