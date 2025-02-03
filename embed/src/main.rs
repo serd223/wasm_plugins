@@ -1,27 +1,62 @@
+use std::sync::RwLock;
+
 use embed::Plugs;
 use wasmtime::*;
 
 mod my_core {
     use embed::PlugsLinker;
+    use std::sync::{Arc, RwLock};
 
-    pub fn link(mut linker: PlugsLinker) -> wasmtime::Result<()> {
-        linker.define_fn("print", print)?;
-        linker.define_fn("print2", print2)?;
+    use crate::AppState;
+
+    // Due to `wasmtime`s requirements, we need to wrap our state in a `RwLock` to be able to mutate it
+    type AppStateType = RwLock<AppState>;
+
+    pub fn link(
+        mut linker: PlugsLinker,
+        state: &Option<Arc<AppStateType>>,
+    ) -> wasmtime::Result<()> {
+        let print_state = state.clone().expect("State is None");
+        let print2_state = Arc::clone(&print_state);
+
+        linker.define_fn("print", move |a: i32| print(a, &print_state))?;
+        linker.define_fn("print2", move |x: i32, y: i32| print2(x, y, &print2_state))?;
         Ok(())
     }
 
-    fn print(a: i32) {
-        println!("[core::print]: {a}");
+    fn print(a: i32, state: &Arc<AppStateType>) {
+        println!(
+            "[core::print]: {a}; print_count: {}",
+            state.read().unwrap().print_count
+        );
+        let mut state = state.write().unwrap();
+        state.print_count += 1;
     }
 
-    fn print2(x: i32, y: i32) {
-        println!("[core::print2]: {x},{y}");
+    fn print2(x: i32, y: i32, state: &Arc<AppStateType>) {
+        println!(
+            "[core::print2]: {x},{y}; print2_count: {}",
+            state.read().unwrap().print2_count
+        );
+        let mut state = state.write().unwrap();
+        state.print2_count += 1;
     }
+}
+
+#[derive(Default)]
+struct AppState {
+    print_count: i32,
+    print2_count: i32,
 }
 
 fn main() -> wasmtime::Result<()> {
     let engine = Engine::default();
-    let mut plugs = Plugs::new(&engine, Some(my_core::link));
+    // States and core libraries are both optional
+    let mut plugs = Plugs::new(
+        &engine,
+        Some(RwLock::new(AppState::default())),
+        Some(my_core::link),
+    );
 
     // Load order is important and circular dependencies are disallowed
     plugs.add("../plug1.wasm", &engine)?;

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 use wasmtime::{
     Engine, Instance, Linker, Module, Store, TypedFunc, UnknownImportError, Val, ValType,
@@ -23,33 +23,42 @@ pub struct PlugMetadata {
 pub struct PlugsLinker<'a>(&'a mut Linker<()>);
 
 impl PlugsLinker<'_> {
-    pub fn define_fn<Params, Args>(
+    pub fn define_fn<Params, Results>(
         &mut self,
         name: &str,
-        func: impl wasmtime::IntoFunc<(), Params, Args>,
+        func: impl wasmtime::IntoFunc<(), Params, Results>,
     ) -> wasmtime::Result<()> {
         self.0.func_wrap("env", name, func)?;
         Ok(())
     }
 }
 
-pub struct Plugs<F>
+pub struct Plugs<T, F>
 where
-    F: Fn(PlugsLinker) -> wasmtime::Result<()>,
+    F: Fn(PlugsLinker, &Option<Arc<T>>) -> wasmtime::Result<()>,
 {
+    pub state: Option<Arc<T>>,
     pub store: Store<()>,
     pub items: HashMap<String, Plug>,
     pub order: Vec<String>,
     core_linker: Option<F>,
 }
 
-impl<F> Plugs<F>
+impl<T, F> Plugs<T, F>
 where
-    F: Fn(PlugsLinker) -> wasmtime::Result<()>,
+    F: Fn(PlugsLinker, &Option<Arc<T>>) -> wasmtime::Result<()>,
 {
-    /// Create a new `Plugs` with a `wasmtime::Engine` and an optional core linking function if you want to have core functions for your plugins
-    pub fn new(engine: &Engine, core_linker: Option<F>) -> Self {
+    /// Create a new `Plugs` with a `wasmtime::Engine`, optional state and an optional core linking function if you want to have core functions for your plugins
+    /// You will usually need to wrap your state in a `Mutex` or a `Rwlock` if you want to mutate it as `wasmtime` has certain requirements regarding shared memory
+    /// The state is internally stored in an `Arc` (which is why the core_linker accepts &Option<Arc<T>>) so you don't have to wrap your type in an `Arc` yourself
+    pub fn new(engine: &Engine, state: Option<T>, core_linker: Option<F>) -> Self {
+        let state = if let Some(s) = state {
+            Some(Arc::new(s))
+        } else {
+            None
+        };
         Self {
+            state,
             store: Store::new(engine, ()),
             core_linker,
             items: HashMap::new(),
@@ -67,7 +76,7 @@ where
         let mut linker = Linker::new(engine);
 
         if let Some(f) = &self.core_linker {
-            f(PlugsLinker(&mut linker))?;
+            f(PlugsLinker(&mut linker), &self.state)?;
         }
 
         let mut imports = Vec::new();
@@ -152,7 +161,7 @@ where
 
         // Link core library (optional)
         if let Some(f) = &self.core_linker {
-            f(PlugsLinker(&mut linker))?;
+            f(PlugsLinker(&mut linker), &self.state)?
         }
         self.items.insert(
             name.to_string(),
