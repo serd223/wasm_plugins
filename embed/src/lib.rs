@@ -242,11 +242,10 @@ where
 
             let p = self.items.get_mut(name.as_str()).unwrap();
 
-            p.imports = imports;
-            if p.imports.len() > 0 {
+            if imports.len() > 0 {
                 return Err(wasmtime::Error::msg(format!(
                     "Plugin '{name}' has unresolved imports: {:?}",
-                    p.imports
+                    imports
                 )));
             }
 
