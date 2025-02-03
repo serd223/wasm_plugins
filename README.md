@@ -47,13 +47,13 @@ Windows:
 ```console
   $ ./build_plugs.ps1 # Wont build plug5
   $ cd embed
-  $ cargo run --release
+  $ cargo run
 ```
 
 Linux:
 ```console
   $ ./build_plugs.sh
   $ cd ./embed
-  $ cargo run --release
+  $ cargo run
 ```
 
