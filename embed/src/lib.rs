@@ -244,7 +244,7 @@ where
                         };
                     } else {
                         return Err(wasmtime::Error::msg(format!(
-                            "'{dep_name}' is not a valid import"
+                            "'{dep_name}' is not a valid dependency"
                         )));
                     }
                 }
