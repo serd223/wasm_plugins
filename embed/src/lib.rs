@@ -1,16 +1,36 @@
 use std::{collections::HashMap, path::Path};
 
-use wasmtime::{Engine, Instance, Linker, Module, Store, TypedFunc, WasmParams, WasmResults};
+use wasmtime::{
+    Engine, Instance, Linker, Module, Store, TypedFunc, UnknownImportError, Val, ValType,
+    WasmParams, WasmResults,
+};
+
+const RESERVED_EXPORTS: &[&str] = &[
+    "memory",
+    "__data_end",
+    "__heap_base",
+    "__wasm_call_ctors",
+    "__dso_handle",
+    "__global_base",
+    "__memory_base",
+    "__table_base",
+    "deps",
+    "name",
+];
 
 pub struct Plug {
     pub module: Module,
     pub linker: Linker<()>,
     pub instance: Option<Instance>,
     pub deps: Vec<String>,
+    pub exports: Vec<String>,
+    pub imports: Vec<String>,
 }
 
 pub struct PlugMetadata {
     pub deps: Vec<String>,
+    pub exports: Vec<String>,
+    pub imports: Vec<String>,
 }
 
 pub struct PlugsLinker<'a>(&'a mut Linker<()>);
@@ -59,16 +79,46 @@ where
     ) -> wasmtime::Result<PlugMetadata> {
         let mut linker = Linker::new(engine);
         linker.allow_shadowing(true);
-        linker.define_unknown_imports_as_default_values(&module)?;
 
-        let instance = linker.instantiate(&mut self.store, &module)?;
+        if let Some(f) = &self.core_linker {
+            f(PlugsLinker(&mut linker))?;
+        }
+
+        let mut imports = Vec::new();
+        let instance = loop {
+            match linker.instantiate(&mut self.store, &module) {
+                Ok(inst) => break inst,
+                Err(e) => {
+                    let e: UnknownImportError = e.downcast()?;
+                    let ftype = e.ty().func().unwrap().clone();
+                    let result_types = ftype.results().collect::<Vec<_>>();
+                    linker.func_new("env", e.name(), ftype, move |_, _, results| {
+                        for (i, res_type) in result_types.iter().enumerate() {
+                            results[i] = match res_type {
+                                ValType::I32 => Val::I32(0),
+                                ValType::I64 => Val::I64(0),
+                                ValType::F32 => Val::F32(0f32.to_bits()),
+                                ValType::F64 => Val::F64(0f64.to_bits()),
+                                ValType::V128 => Val::V128(0u128.into()),
+                                ValType::Ref(r) => Val::null_ref(r.heap_type()),
+                            };
+                        }
+
+                        Ok(())
+                    })?;
+
+                    imports.push(e.name().to_string());
+                    continue;
+                }
+            }
+        };
 
         // TODO: The plugin name could also be extracted in a similar way instead of
         // relying on the file name. The current file name approach makes the system simpler
         // but I think I will switch to a `name` export in the future.
 
         // Extract dependencies (optional)
-        let mut res = Vec::new();
+        let mut deps = Vec::new();
         if let Ok(deps_fn) = instance.get_typed_func::<(), u32>(&mut self.store, "deps") {
             let mut deps_ptr = deps_fn.call(&mut self.store, ())?;
             let memory = {
@@ -79,20 +129,29 @@ where
                 }
             };
             let mut deps_buf = vec![0u8];
-            res.push(String::new());
+            deps.push(String::new());
             memory.read(&mut self.store, deps_ptr as usize, &mut deps_buf)?;
             while deps_buf[0] != 0 {
                 let c = deps_buf[0] as char;
                 if c == ';' {
-                    res.push(String::new());
+                    deps.push(String::new());
                 } else {
-                    res.last_mut().unwrap().push(c);
+                    deps.last_mut().unwrap().push(c);
                 }
                 deps_ptr += 1;
                 memory.read(&mut self.store, deps_ptr as usize, &mut deps_buf)?;
             }
         }
-        Ok(PlugMetadata { deps: res })
+        let exports = module
+            .exports()
+            .map(|e| e.name().to_string())
+            .filter(|n| !RESERVED_EXPORTS.contains(&n.as_str()))
+            .collect();
+        Ok(PlugMetadata {
+            deps,
+            exports,
+            imports,
+        })
     }
 
     /// Add plug (without linking except the core library)
@@ -121,6 +180,8 @@ where
                 linker,
                 instance: None,
                 deps: metadata.deps,
+                exports: metadata.exports,
+                imports: metadata.imports,
             },
         );
         self.order.push(name.to_string());
@@ -141,39 +202,68 @@ where
         for name in self.order.iter() {
             let p = self.items.get_mut(name.as_str()).unwrap();
             let deps = p.deps.clone();
-            println!("\n[Plugs::link]: {name} has {deps:?} as dependencies");
-            let p = std::ptr::from_mut(p);
-            for dep in deps.iter() {
-                if let Some(p_dep) = self.items.get_mut(dep.as_str()) {
-                    let exports = {
-                        if let Some(inst) = &p_dep.instance {
-                            inst
-                        } else {
-                            return Err(wasmtime::Error::msg(format!(
-                                "Dependency {dep} in plugin {name} hasn't been instantiated yet."
-                            )));
-                        }
+            let mut imports = p.imports.clone();
+            let mut to_import = Vec::new();
+
+            #[cfg(debug_assertions)]
+            println!("\n[Plugs::link]: '{name}' has {deps:?} as dependencies");
+
+            if imports.len() > 0 {
+                for dep_name in deps.iter() {
+                    if let Some(p_dep) = self.items.get_mut(dep_name) {
+                        imports = {
+                            let mut res = Vec::new();
+                            for imp in imports {
+                                let exists = p_dep.exports.contains(&imp);
+                                if exists {
+                                    let inst = if let Some(inst) = &p_dep.instance {
+                                        inst
+                                    } else {
+                                        return Err(wasmtime::Error::msg(format!("Dependency '{dep_name}' in plugin '{name}' hasn't been instantiated yet")));
+                                    };
+
+                                    let export = if let Some(e) =
+                                        inst.get_export(&mut self.store, &imp)
+                                    {
+                                        e
+                                    } else {
+                                        return Err(wasmtime::Error::msg(format!("Dependency '{dep_name}' doesn't have export '{imp}' required by plugin '{name}'")));
+                                    };
+
+                                    #[cfg(debug_assertions)]
+                                    println!("[Plugs::link]: Will define '{imp}' from '{dep_name}' in '{name}'");
+
+                                    // plug.imports should never contain any reserved exports unless something went very wrong
+                                    to_import.push((imp, export));
+                                } else {
+                                    res.push(imp);
+                                }
+                            }
+
+                            res
+                        };
+                    } else {
+                        return Err(wasmtime::Error::msg(format!(
+                            "'{dep_name}' is not a valid import"
+                        )));
                     }
-                    .exports(&mut self.store)
-                    .map(|e| (e.name().to_string(), e.into_extern()))
-                    .collect::<Vec<_>>();
-                    for (key, export) in exports {
-                        if !["memory", "__data_end", "__heap_base", "deps", "name"] // Reserved exports
-                            .contains(&key.as_str())
-                        {
-                            println!("[Plugs::link]: Defining '{key}' from '{dep}' in '{name}'");
-                            // Technically unsafe but realistically completely safe
-                            unsafe {
-                                (*p).linker
-                                    .define(&mut self.store, "env", key.as_str(), export)?
-                            };
-                        }
-                    }
-                } else {
-                    return Err(wasmtime::Error::msg(format!("{dep} is not a valid import")));
                 }
             }
+
             let p = self.items.get_mut(name.as_str()).unwrap();
+
+            p.imports = imports;
+            if p.imports.len() > 0 {
+                return Err(wasmtime::Error::msg(format!(
+                    "Plugin '{name}' has unresolved imports: {:?}",
+                    p.imports
+                )));
+            }
+
+            for (imp, export) in to_import {
+                p.linker.define(&mut self.store, "env", &imp, export)?;
+            }
+
             p.instance = Some(p.linker.instantiate(&mut self.store, &p.module)?);
         }
         Ok(())
@@ -202,12 +292,12 @@ where
                 inst.get_typed_func::<P, R>(&mut self.store, func)
             } else {
                 Err(wasmtime::Error::msg(format!(
-                    "Plugin {plug} hasn't been instantiated yet."
+                    "Plugin '{plug}' hasn't been instantiated yet"
                 )))
             }
         } else {
             Err(wasmtime::Error::msg(format!(
-                "Couldn't find function {func} in plugin {plug}."
+                "Couldn't find function '{func}' in plugin '{plug}'"
             )))
         }
     }
