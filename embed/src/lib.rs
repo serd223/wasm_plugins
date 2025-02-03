@@ -8,6 +8,7 @@ pub struct Plug {
     pub module: Module,
     pub linker: Linker<()>,
     pub instance: Option<Instance>,
+    pub deps: Vec<String>,
 }
 
 pub struct PlugsLinker<'a>(&'a mut Linker<()>);
@@ -30,7 +31,6 @@ where
     pub store: Store<()>,
     pub items: HashMap<&'a str, Plug>,
     pub order: Vec<String>,
-    pub deps: HashMap<String, Vec<String>>,
     core_linker: Option<F>,
 }
 
@@ -45,7 +45,6 @@ where
             core_linker,
             items: HashMap::new(),
             order: Vec::new(),
-            deps: HashMap::new(),
         }
     }
 
@@ -120,13 +119,13 @@ where
         if let Some(f) = &self.core_linker {
             f(PlugsLinker(&mut linker))?;
         }
-        self.deps.insert(String::from(name), deps);
         self.items.insert(
             name,
             Plug {
                 module,
                 linker,
                 instance: None,
+                deps,
             },
         );
         self.order.push(name.to_string());
@@ -145,9 +144,9 @@ where
         // could be some edge case where the linker doesn't properly link everything especially if the dependency graph is very
         // convoluted and the circular dependency is deep within the dependency tree.
         for name in self.order.iter() {
-            let deps = self.deps.get(name).unwrap();
-            println!("\n[Plugs::link]: {name} has {deps:?} as dependencies");
             let p = self.items.get_mut(name.as_str()).unwrap();
+            let deps = p.deps.clone();
+            println!("\n[Plugs::link]: {name} has {deps:?} as dependencies");
             let p = std::ptr::from_mut(p);
             for dep in deps.iter() {
                 if let Some(p_dep) = self.items.get_mut(dep.as_str()) {
