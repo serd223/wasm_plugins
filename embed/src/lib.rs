@@ -26,17 +26,17 @@ impl PlugsLinker<'_> {
     }
 }
 
-pub struct Plugs<'a, F>
+pub struct Plugs<F>
 where
     F: Fn(PlugsLinker) -> wasmtime::Result<()>,
 {
     pub store: Store<()>,
-    pub items: HashMap<&'a str, Plug>,
+    pub items: HashMap<String, Plug>,
     pub order: Vec<String>,
     core_linker: Option<F>,
 }
 
-impl<'a, F> Plugs<'a, F>
+impl<F> Plugs<F>
 where
     F: Fn(PlugsLinker) -> wasmtime::Result<()>,
 {
@@ -96,7 +96,7 @@ where
     }
 
     /// Add plug (without linking except the core library)
-    pub fn add(&mut self, file_path: &'a str, engine: &Engine) -> wasmtime::Result<()> {
+    pub fn add(&mut self, file_path: &str, engine: &Engine) -> wasmtime::Result<()> {
         let fp = Path::new(file_path);
         let ext = fp.extension().unwrap();
         let ext_len = ext.len();
@@ -115,7 +115,7 @@ where
             f(PlugsLinker(&mut linker))?;
         }
         self.items.insert(
-            name,
+            name.to_string(),
             Plug {
                 module,
                 linker,
