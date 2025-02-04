@@ -53,6 +53,12 @@ fn main() -> wasmtime::Result<()> {
     plugs.add("../plug4.wasm", &engine)?;
     plugs.add("../plug5.wasm", &engine)?;
 
+    for (name, plug) in plugs.items.iter() {
+        println!("[INFO]: '{name}' metadata:");
+        println!("[INFO]:     exports: {:?}", plug.exports);
+        println!("[INFO]:     imports: {:?}\n", plug.imports);
+    }
+
     println!("[INFO]: Starting to link...");
     plugs.link()?;
     println!("\n[INFO]: Linking is complete.\n");
