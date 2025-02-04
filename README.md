@@ -9,7 +9,7 @@ The `plugs` directory contains the source code of 5 example plugins. Plugins 1-4
 ## Plugin structure
 Each plugin consists of a single .wasm file. The plugin's file name is used to refer to the plugin in code. (If the plugin's file name is `plug.wasm`, it will be referred to as `plug`)
 
-There are some example `core` functions exported by `embed/src/main.rs` which can be accessed by forward declaring them in your plugin source code. (see the example plugins)
+There are some example 'host functions' exported by `embed/src/main.rs` which can be accessed by forward declaring them in your plugin source code. (see the example plugins)
 
 In order to import from another plugin, you first need to export a special function named `deps` with the following signature:
 ```rs
@@ -25,7 +25,7 @@ const char* deps() {
     return "plug1;plug2";
 }
 ```
-Then you can forward declare any functions you want to use from the other plugin just like you can with the `core` functions. The names you supply in this function are the same names that are inferred from their file names mentioned above.
+Then you can forward declare any functions you want to use from the other plugin just like you can with the host functions. The names you supply in this function are the same names that are inferred from their file names mentioned above.
 
 ## Build instructions for the `embed` example
 ## Prerequisites
