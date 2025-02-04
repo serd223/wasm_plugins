@@ -1,8 +1,8 @@
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{collections::HashMap, path::Path};
 
 use wasmtime::{
-    Engine, Instance, Linker, Module, Store, TypedFunc, UnknownImportError, Val, ValType,
-    WasmParams, WasmResults,
+    Engine, Extern, Func, Instance, IntoFunc, Linker, Module, Store, TypedFunc, UnknownImportError,
+    Val, ValType, WasmParams, WasmResults,
 };
 
 pub struct Plug {
@@ -20,50 +20,44 @@ pub struct PlugMetadata {
     pub imports: Vec<String>,
 }
 
-pub struct PlugsLinker<'a>(&'a mut Linker<()>);
-
-impl PlugsLinker<'_> {
-    pub fn define_fn<Params, Results>(
-        &mut self,
-        name: &str,
-        func: impl wasmtime::IntoFunc<(), Params, Results>,
-    ) -> wasmtime::Result<()> {
-        self.0.func_wrap("env", name, func)?;
-        Ok(())
-    }
+pub struct PlugsHostFns {
+    pub fns: Vec<(String, Extern)>,
 }
 
-pub struct Plugs<T, F>
-where
-    F: Fn(PlugsLinker, &Option<Arc<T>>) -> wasmtime::Result<()>,
-{
-    pub state: Option<Arc<T>>,
+pub struct Plugs {
     pub store: Store<()>,
     pub items: HashMap<String, Plug>,
     pub order: Vec<String>,
-    core_linker: Option<F>,
+    pub host_fns: PlugsHostFns,
 }
 
-impl<T, F> Plugs<T, F>
-where
-    F: Fn(PlugsLinker, &Option<Arc<T>>) -> wasmtime::Result<()>,
-{
+impl Plugs {
     /// Create a new `Plugs` with a `wasmtime::Engine`, optional state and an optional core linking function if you want to have core functions for your plugins
     /// You will usually need to wrap your state in a `Mutex` or a `Rwlock` if you want to mutate it as `wasmtime` has certain requirements regarding shared memory
     /// The state is internally stored in an `Arc` (which is why the core_linker accepts &Option<Arc<T>>) so you don't have to wrap your type in an `Arc` yourself
-    pub fn new(engine: &Engine, state: Option<T>, core_linker: Option<F>) -> Self {
-        let state = if let Some(s) = state {
-            Some(Arc::new(s))
-        } else {
-            None
-        };
+    pub fn new(engine: &Engine) -> Self {
         Self {
-            state,
             store: Store::new(engine, ()),
-            core_linker,
             items: HashMap::new(),
             order: Vec::new(),
+            host_fns: PlugsHostFns { fns: Vec::new() },
         }
+    }
+
+    pub fn add_host_fn<Params, Results>(
+        &mut self,
+        name: String,
+        func: impl IntoFunc<(), Params, Results>,
+    ) {
+        let func = Into::<Extern>::into(Func::wrap(&mut self.store, func));
+        self.host_fns.fns.push((name, func));
+    }
+
+    pub fn link_host(&mut self, linker: &mut Linker<()>) -> wasmtime::Result<()> {
+        for (name, func) in self.host_fns.fns.iter() {
+            linker.define(&mut self.store, "env", name, func.clone())?;
+        }
+        Ok(())
     }
 
     /// Extract metadata from the specified module by instantiating a temporary instance and running the
@@ -74,10 +68,6 @@ where
         module: &Module,
     ) -> wasmtime::Result<PlugMetadata> {
         let mut linker = Linker::new(engine);
-
-        if let Some(f) = &self.core_linker {
-            f(PlugsLinker(&mut linker), &self.state)?;
-        }
 
         let mut imports = Vec::new();
         let instance = loop {
@@ -101,8 +91,11 @@ where
 
                         Ok(())
                     })?;
-
-                    imports.push(e.name().to_string());
+                    let imp = e.name().to_string();
+                    let is_host_fn = self.host_fns.fns.iter().any(|(n, _)| imp.eq(n));
+                    if !is_host_fn {
+                        imports.push(e.name().to_string());
+                    }
                     continue;
                 }
             }
@@ -160,9 +153,8 @@ where
         let mut linker = Linker::new(engine);
 
         // Link core library (optional)
-        if let Some(f) = &self.core_linker {
-            f(PlugsLinker(&mut linker), &self.state)?
-        }
+        self.link_host(&mut linker)?;
+
         self.items.insert(
             name.to_string(),
             Plug {
@@ -275,7 +267,6 @@ where
         plug: &str,
         func: &str,
     ) -> Result<TypedFunc<P, R>, wasmtime::Error> {
-        // TODO: Store initial exports of plugins before linking and use that as a lookup table in this function
         if let Some(p) = self.items.get_mut(plug) {
             if let Some(inst) = &p.instance {
                 inst.get_typed_func::<P, R>(&mut self.store, func)
