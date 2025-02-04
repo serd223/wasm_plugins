@@ -1,4 +1,4 @@
-use embed::Plugs;
+use wasm_plugs::Plugs;
 use wasmtime::*;
 
 mod my_core {
