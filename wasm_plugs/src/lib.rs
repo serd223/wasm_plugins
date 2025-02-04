@@ -6,10 +6,16 @@ use wasmtime::{
 };
 
 const DEPS_EXPORT: &str = "__deps";
+const INIT_EXPORT: &str = "__init";
+
+pub type PlugId = usize;
+
+pub struct PlugContext<T>(pub PlugId, pub T);
 
 pub struct Plug<T> {
+    pub id: PlugId,
     pub module: Module,
-    pub linker: Linker<T>,
+    pub linker: Linker<PlugContext<T>>,
     pub instance: Option<Instance>,
     pub deps: Vec<String>,
     pub exports: Vec<String>,
@@ -27,7 +33,7 @@ pub struct PlugsHostFns {
 }
 
 pub struct Plugs<T> {
-    pub store: Store<T>,
+    pub store: Store<PlugContext<T>>,
     pub items: HashMap<String, Plug<T>>,
     pub order: Vec<String>,
     pub host_fns: PlugsHostFns,
@@ -37,7 +43,7 @@ impl<T> Plugs<T> {
     /// Create a new `Plugs` with a `wasmtime::Engine` and state
     pub fn new(engine: &Engine, state: T) -> Self {
         Self {
-            store: Store::new(engine, state),
+            store: Store::new(engine, PlugContext(0, state)),
             items: HashMap::new(),
             order: Vec::new(),
             host_fns: PlugsHostFns { fns: Vec::new() },
@@ -47,14 +53,14 @@ impl<T> Plugs<T> {
     pub fn add_host_fn<Params, Results>(
         &mut self,
         name: String,
-        func: impl IntoFunc<T, Params, Results>,
+        func: impl IntoFunc<PlugContext<T>, Params, Results>,
     ) {
         let func = Func::wrap(&mut self.store, func);
         let func = Into::<Extern>::into(func);
         self.host_fns.fns.push((name, func));
     }
 
-    pub fn link_host(&mut self, linker: &mut Linker<T>) -> wasmtime::Result<()> {
+    pub fn link_host(&mut self, linker: &mut Linker<PlugContext<T>>) -> wasmtime::Result<()> {
         for (name, func) in self.host_fns.fns.iter() {
             linker.define(&mut self.store, "env", name, func.clone())?;
         }
@@ -159,6 +165,7 @@ impl<T> Plugs<T> {
         self.items.insert(
             name.to_string(),
             Plug {
+                id: self.order.len(),
                 module,
                 linker,
                 instance: None,
@@ -250,26 +257,54 @@ impl<T> Plugs<T> {
         Ok(())
     }
 
-    /// Convenience function for getting and calling function in a plugin
+    pub fn init(&mut self) -> wasmtime::Result<()> {
+        let names = self.order.clone();
+
+        for name in names {
+            if let Ok((id, init_fn)) = self.get_func_with_id::<(), ()>(&name, INIT_EXPORT) {
+                self.set_current_id(id);
+                init_fn.call(&mut self.store, ())?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Convenience function calling function in a plugin and setting the plugin's id as the current
     pub fn call<P: WasmParams, R: WasmResults>(
         &mut self,
         plug: &str,
         func: &str,
         params: P,
     ) -> wasmtime::Result<R> {
-        let f = self.get_func(plug, func)?;
+        let (id, f) = self.get_func_with_id(plug, func)?;
+        self.set_current_id(id);
         f.call(&mut self.store, params)
     }
 
-    /// Looks up a function in the specified plugin
-    pub fn get_func<P: WasmParams, R: WasmResults>(
+    /// Must be set before calling any function
+    pub fn set_current_id(&mut self, plugin_id: PlugId) {
+        self.store.data_mut().0 = plugin_id;
+    }
+
+    /// Gets id of plugin by name
+    pub fn get_plug_id(&self, name: &str) -> Option<PlugId> {
+        if let Some(p) = self.items.get(name) {
+            return Some(p.id);
+        }
+        None
+    }
+
+    /// Looks up a function in the specified plugin and returns the id of the plugin and the function
+    pub fn get_func_with_id<P: WasmParams, R: WasmResults>(
         &mut self,
         plug: &str,
         func: &str,
-    ) -> Result<TypedFunc<P, R>, wasmtime::Error> {
-        if let Some(p) = self.items.get_mut(plug) {
+    ) -> wasmtime::Result<(PlugId, TypedFunc<P, R>)> {
+        if let Some(p) = self.items.get(plug) {
             if let Some(inst) = &p.instance {
                 inst.get_typed_func::<P, R>(&mut self.store, func)
+                    .map(|f| (p.id, f))
             } else {
                 Err(wasmtime::Error::msg(format!(
                     "Plugin '{plug}' hasn't been instantiated yet"
