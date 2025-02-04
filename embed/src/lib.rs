@@ -32,9 +32,7 @@ pub struct Plugs<T> {
 }
 
 impl<T> Plugs<T> {
-    /// Create a new `Plugs` with a `wasmtime::Engine`, optional state and an optional core linking function if you want to have core functions for your plugins
-    /// You will usually need to wrap your state in a `Mutex` or a `Rwlock` if you want to mutate it as `wasmtime` has certain requirements regarding shared memory
-    /// The state is internally stored in an `Arc` (which is why the core_linker accepts &Option<Arc<T>>) so you don't have to wrap your type in an `Arc` yourself
+    /// Create a new `Plugs` with a `wasmtime::Engine` and state
     pub fn new(engine: &Engine, state: T) -> Self {
         Self {
             store: Store::new(engine, state),
@@ -139,7 +137,7 @@ impl<T> Plugs<T> {
         })
     }
 
-    /// Add plug (without linking except the core library)
+    /// Add plug (without linking except host functions)
     pub fn add(&mut self, file_path: &str, engine: &Engine) -> wasmtime::Result<()> {
         let fp = Path::new(file_path);
         let ext = fp.extension().unwrap();
@@ -153,7 +151,7 @@ impl<T> Plugs<T> {
 
         let mut linker = Linker::new(engine);
 
-        // Link core library (optional)
+        // Link host functions
         self.link_host(&mut linker)?;
 
         self.items.insert(
@@ -216,7 +214,6 @@ impl<T> Plugs<T> {
                                     #[cfg(debug_assertions)]
                                     println!("[Plugs::link]: Will define '{imp}' from '{dep_name}' in '{name}'");
 
-                                    // plug.imports should never contain any reserved exports unless something went very wrong
                                     to_import.push((imp, export));
                                 } else {
                                     res.push(imp);
