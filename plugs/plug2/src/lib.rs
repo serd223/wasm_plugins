@@ -5,7 +5,7 @@ extern "C" {
 }
 
 #[no_mangle]
-pub extern "C" fn deps() -> *const u8 {
+pub extern "C" fn __deps() -> *const u8 {
     b"plug1\0".as_ptr()
 }
 

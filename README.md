@@ -11,17 +11,17 @@ Each plugin consists of a single .wasm file. The plugin's file name is used to r
 
 There are some example 'host functions' exported by `embed/src/main.rs` which can be accessed by forward declaring them in your plugin source code. (see the example plugins)
 
-In order to import from another plugin, you first need to export a special function named `deps` with the following signature:
+In order to import from another plugin, you first need to export a special function named `__deps` with the following signature:
 ```rs
 // Rust
 #[no_mangle]
-pub extern "C" fn deps() -> *const u8 {
+pub extern "C" fn __deps() -> *const u8 {
     b"plug1;plug2\0".as_ptr()
 }
 ```
 ```c
 // C
-const char* deps() {
+const char* __deps() {
     return "plug1;plug2";
 }
 ```

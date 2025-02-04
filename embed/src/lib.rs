@@ -5,6 +5,8 @@ use wasmtime::{
     Val, ValType, WasmParams, WasmResults,
 };
 
+const DEPS_EXPORT: &str = "__deps";
+
 pub struct Plug<T> {
     pub module: Module,
     pub linker: Linker<T>,
@@ -106,7 +108,7 @@ impl<T> Plugs<T> {
 
         // Extract dependencies (optional)
         let mut deps = Vec::new();
-        if let Ok(deps_fn) = instance.get_typed_func::<(), u32>(&mut self.store, "deps") {
+        if let Ok(deps_fn) = instance.get_typed_func::<(), u32>(&mut self.store, DEPS_EXPORT) {
             let mut deps_ptr = deps_fn.call(&mut self.store, ())?;
             let memory = {
                 if let Some(m) = instance.get_memory(&mut self.store, "memory") {
