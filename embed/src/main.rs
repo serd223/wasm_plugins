@@ -1,29 +1,33 @@
-use std::sync::{Arc, RwLock};
-
 use embed::Plugs;
 use wasmtime::*;
 
 mod my_core {
 
-    use std::sync::{Arc, RwLock};
+    use wasmtime::Caller;
 
     use crate::State;
 
-    pub fn print(a: i32, state: &Arc<RwLock<State>>) {
-        println!(
-            "[core::print]: {a}; print_count: {}",
-            state.read().unwrap().print_count
-        );
-        let mut state = state.write().unwrap();
+    // `wasmtime` passes the correct `Caller` automatically when calling the function
+    // You can omit the `Caller` arguement if you don't use it for any state management or memory access
+    // It needs to be the first arguement if you are going to use it
+    pub fn print(mut c: Caller<'_, State>, a: i32) {
+        // If we wanted to use strings or any other pointer from wasm memory, we could access the memory like this:
+        // let memory = c
+        //     .get_export("memory")
+        //     .expect("Couldn't find 'memory' export")
+        //     .into_memory()
+        //     .unwrap();
+        let state = c.data_mut();
+        println!("[core::print]: {a}; print_count: {}", state.print_count);
         state.print_count += 1;
     }
 
-    pub fn print2(x: i32, y: i32, state: &Arc<RwLock<State>>) {
+    pub fn print2(mut c: Caller<'_, State>, x: i32, y: i32) {
+        let state = c.data_mut();
         println!(
             "[core::print2]: {x},{y}; print2_count: {}",
-            state.read().unwrap().print2_count
+            state.print2_count
         );
-        let mut state = state.write().unwrap();
         state.print2_count += 1;
     }
 }
@@ -36,21 +40,11 @@ struct State {
 
 fn main() -> wasmtime::Result<()> {
     let engine = Engine::default();
-    let mut plugs = Plugs::new(&engine);
+    let my_state = State::default();
+    let mut plugs = Plugs::new(&engine, my_state);
 
-    // Due to `wasmtime`s requirements regarding shared memory, we wrap our state in an `Arc` and a `RwLock`
-    // `RwLock` isn't necessary if state isn't going to be mutated.
-    let state = Arc::new(RwLock::new(State::default()));
-    {
-        let print_state = Arc::clone(&state);
-        plugs.add_host_fn("print".to_string(), move |a: i32| {
-            my_core::print(a, &print_state)
-        });
-        let print2_state = Arc::clone(&state);
-        plugs.add_host_fn("print2".to_string(), move |x: i32, y: i32| {
-            my_core::print2(x, y, &print2_state)
-        });
-    }
+    plugs.add_host_fn("print".to_string(), my_core::print);
+    plugs.add_host_fn("print2".to_string(), my_core::print2);
 
     // Load order is important and circular dependencies are disallowed
     plugs.add("../plug1.wasm", &engine)?;

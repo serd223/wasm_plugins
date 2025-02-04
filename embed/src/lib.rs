@@ -5,9 +5,9 @@ use wasmtime::{
     Val, ValType, WasmParams, WasmResults,
 };
 
-pub struct Plug {
+pub struct Plug<T> {
     pub module: Module,
-    pub linker: Linker<()>,
+    pub linker: Linker<T>,
     pub instance: Option<Instance>,
     pub deps: Vec<String>,
     pub exports: Vec<String>,
@@ -24,20 +24,20 @@ pub struct PlugsHostFns {
     pub fns: Vec<(String, Extern)>,
 }
 
-pub struct Plugs {
-    pub store: Store<()>,
-    pub items: HashMap<String, Plug>,
+pub struct Plugs<T> {
+    pub store: Store<T>,
+    pub items: HashMap<String, Plug<T>>,
     pub order: Vec<String>,
     pub host_fns: PlugsHostFns,
 }
 
-impl Plugs {
+impl<T> Plugs<T> {
     /// Create a new `Plugs` with a `wasmtime::Engine`, optional state and an optional core linking function if you want to have core functions for your plugins
     /// You will usually need to wrap your state in a `Mutex` or a `Rwlock` if you want to mutate it as `wasmtime` has certain requirements regarding shared memory
     /// The state is internally stored in an `Arc` (which is why the core_linker accepts &Option<Arc<T>>) so you don't have to wrap your type in an `Arc` yourself
-    pub fn new(engine: &Engine) -> Self {
+    pub fn new(engine: &Engine, state: T) -> Self {
         Self {
-            store: Store::new(engine, ()),
+            store: Store::new(engine, state),
             items: HashMap::new(),
             order: Vec::new(),
             host_fns: PlugsHostFns { fns: Vec::new() },
@@ -47,13 +47,14 @@ impl Plugs {
     pub fn add_host_fn<Params, Results>(
         &mut self,
         name: String,
-        func: impl IntoFunc<(), Params, Results>,
+        func: impl IntoFunc<T, Params, Results>,
     ) {
-        let func = Into::<Extern>::into(Func::wrap(&mut self.store, func));
+        let func = Func::wrap(&mut self.store, func);
+        let func = Into::<Extern>::into(func);
         self.host_fns.fns.push((name, func));
     }
 
-    pub fn link_host(&mut self, linker: &mut Linker<()>) -> wasmtime::Result<()> {
+    pub fn link_host(&mut self, linker: &mut Linker<T>) -> wasmtime::Result<()> {
         for (name, func) in self.host_fns.fns.iter() {
             linker.define(&mut self.store, "env", name, func.clone())?;
         }
@@ -282,11 +283,11 @@ impl Plugs {
         }
     }
 
-    pub fn get_plug_mut(&mut self, name: &str) -> Option<&mut Plug> {
+    pub fn get_plug_mut(&mut self, name: &str) -> Option<&mut Plug<T>> {
         self.items.get_mut(name)
     }
 
-    pub fn get_plug(&self, name: &str) -> Option<&Plug> {
+    pub fn get_plug(&self, name: &str) -> Option<&Plug<T>> {
         self.items.get(name)
     }
 }
