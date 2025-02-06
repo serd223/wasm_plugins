@@ -35,25 +35,51 @@ fn main() -> wasmtime::Result<()> {
 
     println!("[INFO]: Starting to link...");
     plugs.link()?;
-    println!("\n[INFO]: Linking is complete.\n");
+    println!("[INFO]: Linking is complete.\n");
 
     println!("[INFO]: Initializing...");
     plugs.init()?;
     println!("[INFO]: Initialization is complete.");
 
-    println!("\n[INFO]: Calling plug1.plug1 with args: 10");
+    println!("\n[INFO]: Calling plug1.plug1 with args: 10\nPlugin output:");
     plugs.call::<_, ()>("plug1", "plug1", 10i32)?;
 
-    println!("\n[INFO]: Calling plug2.plug2 with args: 10");
+    println!("\n[INFO]: Calling plug2.plug2 with args: 10\nPlugin output:");
     plugs.call::<_, ()>("plug2", "plug2", 10i32)?;
 
-    println!("\n[INFO]: Calling plug3.plug3 with args: 10");
+    println!("\n[INFO]: Calling plug3.plug3 with args: 10\nPlugin output:");
     plugs.call::<_, ()>("plug3", "plug3", 10i32)?;
 
-    println!("\n[INFO]: Calling plug4.plug4 with args: 10");
+    println!("\n[INFO]: Calling plug4.plug4 with args: 10\nPlugin output:");
     plugs.call::<_, ()>("plug4", "plug4", 10i32)?;
 
-    println!("\n[INFO]: Calling plug5.hello_from_c with args: (10, 20)");
+    println!("\n[INFO]: Calling plug5.hello_from_c with args: (10, 20)\nPlugin output:");
+    plugs.call::<_, ()>("plug5", "hello_from_c", (10i32, 20i32))?;
+
+    println!("\n[INFO]: Reloading plugins while persisting the state...");
+    plugs.reset();
+    plugs.load("plug1.wasm", &engine)?;
+    plugs.load("plug2.wasm", &engine)?;
+    plugs.load("plug3.wasm", &engine)?;
+    plugs.load("plug4.wasm", &engine)?;
+    plugs.load("plug5.wasm", &engine)?;
+    println!("[INFO] Reload complete.\n");
+
+    println!("[INFO]: Starting to link...");
+    plugs.link()?;
+    println!("[INFO]: Linking is complete.\n");
+
+    println!("[INFO]: Initializing...");
+    plugs.init()?;
+    println!("[INFO]: Initialization is complete.");
+
+    println!("\n[INFO]: Calling plug1.plug1 with args: 10\nPlugin output:");
+    plugs.call::<_, ()>("plug1", "plug1", 10i32)?;
+
+    println!("\n[INFO]: Calling plug4.plug4 with args: 10\nPlugin output:");
+    plugs.call::<_, ()>("plug4", "plug4", 10i32)?;
+
+    println!("\n[INFO]: Calling plug5.hello_from_c with args: (10, 20)\nPlugin output:");
     plugs.call::<_, ()>("plug5", "hello_from_c", (10i32, 20i32))?;
 
     Ok(())

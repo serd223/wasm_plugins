@@ -34,6 +34,23 @@ struct PlugsHostFns {
     fns: Vec<(String, Extern)>,
 }
 
+pub struct PlugsResetOptions<T> {
+    pub plugs: bool,
+    pub state: Option<T>,
+    pub host_fns: bool,
+}
+
+impl<T> PlugsResetOptions<T> {
+    /// If you want to reset the state, pass a Some(..) variant with the new value of the state, otherwise pass None
+    pub fn new(plugs: bool, state: Option<T>, host_fns: bool) -> Self {
+        Self {
+            plugs,
+            state,
+            host_fns,
+        }
+    }
+}
+
 /// The main entry point of `wlug`, you can create a `Plugs` instance with `Plugs::new`
 pub struct Plugs<'a, T> {
     pub store: Store<PlugContext<T>>,
@@ -334,6 +351,25 @@ impl<'a, T> Plugs<'a, T> {
             p.instance = Some(p.linker.instantiate(&mut self.store, &p.module)?);
         }
         Ok(())
+    }
+
+    /// Reset `self` by clearing all plugins but doesn't reset the state inside `self.store`
+    pub fn reset(&mut self) {
+        self.items.clear();
+        self.order.clear();
+    }
+
+    /// Reset `self` according to the given options
+    pub fn reset_with_options(&mut self, options: PlugsResetOptions<T>) {
+        if options.plugs {
+            self.reset()
+        }
+        if let Some(new_state) = options.state {
+            *self.store.data_mut() = PlugContext(0, new_state);
+        }
+        if options.host_fns {
+            self.host_fns.fns.clear();
+        }
     }
 
     /// Call the init functions of all plugins. This method looks for an export matches `self.init_export`
