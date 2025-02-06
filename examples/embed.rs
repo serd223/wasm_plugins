@@ -1,45 +1,6 @@
 use wasmtime::*;
 use wlug::Plugs;
 
-mod my_core {
-
-    use wasmtime::Caller;
-    use wlug::PlugContext;
-
-    use crate::State;
-
-    // `wasmtime` passes the correct `Caller` automatically when calling the function
-    // You can omit the `Caller` arguement if you don't use it for any state management or memory access
-    // `Caller` must be declared as the first arguement if you are going to use the state in this function
-    // `PlugContext` struct is a tuple struct contains the id of the current plugin and your state, you can unpack
-    // it and use that id according to your needs
-    pub fn print(mut c: Caller<'_, PlugContext<State>>, a: i32) {
-        // If we wanted to use strings or any other pointer from wasm memory, we could access the memory like this:
-        // let memory = c
-        //     .get_export("memory")
-        //     .expect("Couldn't find 'memory' export")
-        //     .into_memory()
-        //     .unwrap();
-        let PlugContext(id, state) = c.data_mut();
-        println!(
-            "[core::print]: plug{}: {a}; print_count: {}",
-            *id + 1,
-            state.print_count
-        );
-        state.print_count += 1;
-    }
-
-    pub fn print2(mut c: Caller<'_, PlugContext<State>>, x: i32, y: i32) {
-        let PlugContext(id, state) = c.data_mut();
-        println!(
-            "[core::print2]: plug{}: {x},{y}; print2_count: {}",
-            *id + 1,
-            state.print2_count
-        );
-        state.print2_count += 1;
-    }
-}
-
 #[derive(Default)]
 struct State {
     print_count: i32,
@@ -96,4 +57,43 @@ fn main() -> wasmtime::Result<()> {
     plugs.call::<_, ()>("plug5", "hello_from_c", (10i32, 20i32))?;
 
     Ok(())
+}
+
+mod my_core {
+
+    use wasmtime::Caller;
+    use wlug::PlugContext;
+
+    use crate::State;
+
+    // `wasmtime` passes the correct `Caller` automatically when calling the function
+    // You can omit the `Caller` arguement if you don't use it for any state management or memory access
+    // `Caller` must be declared as the first arguement if you are going to use the state in this function
+    // `PlugContext` struct is a tuple struct contains the id of the current plugin and your state, you can unpack
+    // it and use that id according to your needs
+    pub fn print(mut c: Caller<'_, PlugContext<State>>, a: i32) {
+        // If we wanted to use strings or any other pointer from wasm memory, we could access the memory like this:
+        // let memory = c
+        //     .get_export("memory")
+        //     .expect("Couldn't find 'memory' export")
+        //     .into_memory()
+        //     .unwrap();
+        let PlugContext(id, state) = c.data_mut();
+        println!(
+            "[core::print]: plug{}: {a}; print_count: {}",
+            *id + 1,
+            state.print_count
+        );
+        state.print_count += 1;
+    }
+
+    pub fn print2(mut c: Caller<'_, PlugContext<State>>, x: i32, y: i32) {
+        let PlugContext(id, state) = c.data_mut();
+        println!(
+            "[core::print2]: plug{}: {x},{y}; print2_count: {}",
+            *id + 1,
+            state.print2_count
+        );
+        state.print2_count += 1;
+    }
 }
