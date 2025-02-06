@@ -59,7 +59,8 @@ const char* __name() {
 ```
 
 ### __deps
-Plugins can optionally export a `__deps` function which returns a null-terminated string that contains the list of plugins they depend on seperated by semicolons (';')
+Plugins can optionally export a `__deps` function which returns a null-terminated string that contains the list of plugins they depend on seperated by semicolons (';'). 
+
 The plugin names used in this functions are the same names that plugins export with their `__name` function.
 ```rs
 // Rust
@@ -80,7 +81,7 @@ During linkage, `Plugs::link` looks for a plugin's unknown imports inside the de
 
 ### __init
 `Plugs::init` executes each plugin's `__init` function. `Plugs::init` is typically called right after `Plugs::link` and before any `call` operations.
-A common use case for this function to initialize memory for state management in WASM memory. (See [`plug1`](https://github.com/serd223/wlug/blob/master/examples/plugs/plug1/src/lib.rs)) 
+A common use case for this function is to initialize memory for state management in WASM memory. (See [`plug1`](https://github.com/serd223/wlug/blob/master/examples/plugs/plug1/src/lib.rs)) 
 ```rs
 // Rust
 #[no_mangle]
