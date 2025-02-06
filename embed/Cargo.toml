@@ -1,8 +1,0 @@
-[package]
-name = "embed"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-wasmtime = "29.0.1"
-wasm_plugs = { path = "../wasm_plugs/"}

@@ -5,9 +5,9 @@ use wasmtime::{
     Val, ValType, WasmParams, WasmResults,
 };
 
-const DEPS_EXPORT: &str = "__deps";
-const INIT_EXPORT: &str = "__init";
-const NAME_EXPORT: &str = "__name";
+pub const DEFAULT_DEPS_EXPORT: &str = "__deps";
+pub const DEFAULT_INIT_EXPORT: &str = "__init";
+pub const DEFAULT_NAME_EXPORT: &str = "__name";
 
 pub type PlugId = usize;
 
@@ -30,18 +30,22 @@ pub struct PlugMetadata {
     pub imports: Vec<String>,
 }
 
-pub struct PlugsHostFns {
-    pub fns: Vec<(String, Extern)>,
+struct PlugsHostFns {
+    fns: Vec<(String, Extern)>,
 }
 
-pub struct Plugs<T> {
+/// The main entry point of `wlug`, you can create a `Plugs` instance with `Plugs::new`
+pub struct Plugs<'a, T> {
     pub store: Store<PlugContext<T>>,
-    pub items: HashMap<String, Plug<T>>,
-    pub order: Vec<String>,
-    pub host_fns: PlugsHostFns,
+    items: HashMap<String, Plug<T>>,
+    order: Vec<String>,
+    host_fns: PlugsHostFns,
+    name_export: &'a str,
+    deps_export: &'a str,
+    init_export: &'a str,
 }
 
-impl<T> Plugs<T> {
+impl<'a, T> Plugs<'a, T> {
     /// Create a new `Plugs` with a `wasmtime::Engine` and state
     pub fn new(engine: &Engine, state: T) -> Self {
         Self {
@@ -49,9 +53,52 @@ impl<T> Plugs<T> {
             items: HashMap::new(),
             order: Vec::new(),
             host_fns: PlugsHostFns { fns: Vec::new() },
+            name_export: DEFAULT_NAME_EXPORT,
+            deps_export: DEFAULT_DEPS_EXPORT,
+            init_export: DEFAULT_INIT_EXPORT,
         }
     }
 
+    /// Change `name_export`
+    pub fn with_name(self, name_export: &'a str) -> Self {
+        Self {
+            name_export,
+            ..self
+        }
+    }
+
+    /// Change `deps_export`
+    pub fn with_deps(self, deps_export: &'a str) -> Self {
+        Self {
+            deps_export,
+            ..self
+        }
+    }
+
+    /// Change `init_export`
+    pub fn with_init(self, init_export: &'a str) -> Self {
+        Self {
+            init_export,
+            ..self
+        }
+    }
+
+    /// Returns a reference to the HashMap that contains plugin names and plugins
+    pub fn items(&self) -> &HashMap<String, Plug<T>> {
+        &self.items
+    }
+
+    /// Returns a reference to the list of plugin names in their load order
+    pub fn order(&self) -> &Vec<String> {
+        &self.order
+    }
+
+    /// Returns a reference to the list of functions supplied by the host
+    pub fn host_fns(&self) -> &Vec<(String, Extern)> {
+        &self.host_fns.fns
+    }
+
+    /// Adds a new host function, function parameters and results are passed through the generic types
     pub fn add_host_fn<Params, Results>(
         &mut self,
         name: String,
@@ -62,6 +109,7 @@ impl<T> Plugs<T> {
         self.host_fns.fns.push((name, func));
     }
 
+    /// Define host functions in the provided linker
     pub fn link_host(&mut self, linker: &mut Linker<PlugContext<T>>) -> wasmtime::Result<()> {
         for (name, func) in self.host_fns.fns.iter() {
             linker.define(&mut self.store, "env", name, func.clone())?;
@@ -110,10 +158,6 @@ impl<T> Plugs<T> {
             }
         };
 
-        // TODO: The plugin name could also be extracted in a similar way instead of
-        // relying on the file name. The current file name approach makes the system simpler
-        // but I think I will switch to a `name` export in the future.
-
         let memory = {
             if let Some(m) = instance.get_memory(&mut self.store, "memory") {
                 m
@@ -124,7 +168,7 @@ impl<T> Plugs<T> {
 
         // Extract dependencies (optional)
         let mut deps = Vec::new();
-        if let Ok(deps_fn) = instance.get_typed_func::<(), u32>(&mut self.store, DEPS_EXPORT) {
+        if let Ok(deps_fn) = instance.get_typed_func::<(), u32>(&mut self.store, self.deps_export) {
             let mut deps_ptr = deps_fn.call(&mut self.store, ())? as usize;
             deps.push(String::new());
             let memory = memory.data(&mut self.store);
@@ -140,7 +184,7 @@ impl<T> Plugs<T> {
         }
 
         let mut name = String::new();
-        match instance.get_typed_func::<(), u32>(&mut self.store, NAME_EXPORT) {
+        match instance.get_typed_func::<(), u32>(&mut self.store, self.name_export) {
             Ok(name_fn) => {
                 let mut name_ptr = name_fn.call(&mut self.store, ())? as usize;
                 let memory = memory.data(&mut self.store);
@@ -151,7 +195,8 @@ impl<T> Plugs<T> {
             }
             Err(_) => {
                 return Err(wasmtime::Error::msg(format!(
-                    "Couldn't find {NAME_EXPORT} in module {module:?}"
+                    "Couldn't find {} in module {module:?}",
+                    self.name_export
                 )))
             }
         }
@@ -213,7 +258,7 @@ impl<T> Plugs<T> {
         self.load_module(module, engine)
     }
 
-    /// Link all plugs, load order is important (TODO: auto sorting)
+    /// Link all plugins, load order is important (TODO: auto sorting)
     /// and circular dependencies are disallowed (won't change, TODO: report as error)
     pub fn link(&mut self) -> wasmtime::Result<()> {
         // TODO: perhaps sort the plugins before linking them so that all plugins are guaranteed to be loaded after their dependencies
@@ -291,11 +336,13 @@ impl<T> Plugs<T> {
         Ok(())
     }
 
+    /// Call the init functions of all plugins. This method looks for an export matches `self.init_export`
+    /// As an init export is optional in plugins, this method will just skip plugins without an init export.
     pub fn init(&mut self) -> wasmtime::Result<()> {
         let names = self.order.clone();
 
         for name in names {
-            if let Ok((id, init_fn)) = self.get_func_with_id::<(), ()>(&name, INIT_EXPORT) {
+            if let Ok((id, init_fn)) = self.get_func_with_id::<(), ()>(&name, self.init_export) {
                 self.set_current_id(id);
                 init_fn.call(&mut self.store, ())?;
             }
@@ -304,7 +351,7 @@ impl<T> Plugs<T> {
         Ok(())
     }
 
-    /// Convenience function calling function in a plugin and setting the plugin's id as the current
+    /// Convenience function for calling function in a plugin and setting the plugin's id as the current
     pub fn call<P: WasmParams, R: WasmResults>(
         &mut self,
         plug: &str,

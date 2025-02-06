@@ -1,5 +1,5 @@
 [package]
-name = "wasm_plugs"
+name = "wlug"
 version = "0.1.0"
 edition = "2021"
 

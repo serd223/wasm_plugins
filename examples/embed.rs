@@ -1,10 +1,10 @@
-use wasm_plugs::Plugs;
 use wasmtime::*;
+use wlug::Plugs;
 
 mod my_core {
 
-    use wasm_plugs::PlugContext;
     use wasmtime::Caller;
+    use wlug::PlugContext;
 
     use crate::State;
 
@@ -50,18 +50,23 @@ fn main() -> wasmtime::Result<()> {
     let engine = Engine::default();
     let my_state = State::default();
     let mut plugs = Plugs::new(&engine, my_state);
+    // You can customize the expected export names with this builder-type API
+    // The values below are the default values for these exports
+    // .with_name("__name")
+    // .with_deps("__deps")
+    // .with_init("__init")
 
     plugs.add_host_fn("print".to_string(), my_core::print);
     plugs.add_host_fn("print2".to_string(), my_core::print2);
 
     // Load order is important and circular dependencies are disallowed
-    plugs.load("../plug1.wasm", &engine)?;
-    plugs.load("../plug2.wasm", &engine)?;
-    plugs.load("../plug3.wasm", &engine)?;
-    plugs.load("../plug4.wasm", &engine)?;
-    plugs.load("../plug5.wasm", &engine)?;
+    plugs.load("plug1.wasm", &engine)?;
+    plugs.load("plug2.wasm", &engine)?;
+    plugs.load("plug3.wasm", &engine)?;
+    plugs.load("plug4.wasm", &engine)?;
+    plugs.load("plug5.wasm", &engine)?;
 
-    for (name, plug) in plugs.items.iter() {
+    for (name, plug) in plugs.items().iter() {
         println!("[INFO]: '{name}' metadata:");
         println!("[INFO]:     exports: {:?}", plug.exports);
         println!("[INFO]:     imports: {:?}\n", plug.imports);
