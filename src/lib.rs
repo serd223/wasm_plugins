@@ -269,17 +269,17 @@ impl<'a, T> Plugs<'a, T> {
         // could be some edge case where the linker doesn't properly link everything especially if the dependency graph is very
         // convoluted and the circular dependency is deep within the dependency tree.
         for name in self.order.iter() {
-            let p = self.items.get_mut(name.as_str()).unwrap();
+            let p = self.items.get(name.as_str()).unwrap();
             let deps = p.deps.clone();
             let mut imports = p.imports.clone();
             let mut to_import = Vec::new();
 
-            #[cfg(debug_assertions)]
-            println!("\n[Plugs::link]: '{name}' has {deps:?} as dependencies");
+            // #[cfg(debug_assertions)]
+            // println!("\n[Plugs::link]: '{name}' has {deps:?} as dependencies");
 
             if imports.len() > 0 {
                 for dep_name in deps.iter() {
-                    if let Some(p_dep) = self.items.get_mut(dep_name) {
+                    if let Some(p_dep) = self.items.get(dep_name) {
                         imports = {
                             let mut res = Vec::new();
                             for imp in imports {
@@ -299,8 +299,8 @@ impl<'a, T> Plugs<'a, T> {
                                         return Err(wasmtime::Error::msg(format!("Dependency '{dep_name}' doesn't have export '{imp}' required by plugin '{name}'")));
                                     };
 
-                                    #[cfg(debug_assertions)]
-                                    println!("[Plugs::link]: Will define '{imp}' from '{dep_name}' in '{name}'");
+                                    // #[cfg(debug_assertions)]
+                                    // println!("[Plugs::link]: Will define '{imp}' from '{dep_name}' in '{name}'");
 
                                     to_import.push((imp, export));
                                 } else {
