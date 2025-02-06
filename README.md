@@ -1,5 +1,5 @@
 # wlug
-`wlug` is a WASM plugin system that enables easy embedding of WASM plugins in your app, allowing seamless interaction between plugins and your host application.
+`wlug` is a WASM plugin system that lets you easily embed WASM plugins written in any language inside your app, also allowing seamless interaction between your application and the plugins.
 
 ## Examples
 The [`embed`](https://github.com/serd223/wlug/tree/master/examples/embed.rs) example in the examples directory is an example that loads and executes the plugins inside [`examples/plugs/`](https://github.com/serd223/wlug/tree/master/examples/plugs) while also exporting some 'host functions' for the plugins to use.
