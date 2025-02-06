@@ -1,4 +1,7 @@
-// plug name is inferred from the file name as plug5
+const char* __name() {
+    return "plug5";
+}
+
 const char* __deps() {
     return "plug1";
 }

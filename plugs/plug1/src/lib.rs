@@ -1,4 +1,8 @@
-// plug name is inferred from the file name as plug1
+#[no_mangle]
+pub extern "C" fn __name() -> *const u8 {
+    b"plug1\0".as_ptr()
+}
+
 extern "C" {
     fn print2(x: i32, y: i32);
 }

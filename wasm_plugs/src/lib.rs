@@ -7,6 +7,7 @@ use wasmtime::{
 
 const DEPS_EXPORT: &str = "__deps";
 const INIT_EXPORT: &str = "__init";
+const NAME_EXPORT: &str = "__name";
 
 pub type PlugId = usize;
 
@@ -23,6 +24,7 @@ pub struct Plug<T> {
 }
 
 pub struct PlugMetadata {
+    pub name: String,
     pub deps: Vec<String>,
     pub exports: Vec<String>,
     pub imports: Vec<String>,
@@ -112,49 +114,60 @@ impl<T> Plugs<T> {
         // relying on the file name. The current file name approach makes the system simpler
         // but I think I will switch to a `name` export in the future.
 
+        let memory = {
+            if let Some(m) = instance.get_memory(&mut self.store, "memory") {
+                m
+            } else {
+                return Err(wasmtime::Error::msg("Couldn't find 'memory' export"));
+            }
+        };
+
         // Extract dependencies (optional)
         let mut deps = Vec::new();
         if let Ok(deps_fn) = instance.get_typed_func::<(), u32>(&mut self.store, DEPS_EXPORT) {
-            let mut deps_ptr = deps_fn.call(&mut self.store, ())?;
-            let memory = {
-                if let Some(m) = instance.get_memory(&mut self.store, "memory") {
-                    m
-                } else {
-                    return Err(wasmtime::Error::msg("Couldn't find 'memory' export"));
-                }
-            };
-            let mut deps_buf = vec![0u8];
+            let mut deps_ptr = deps_fn.call(&mut self.store, ())? as usize;
             deps.push(String::new());
-            memory.read(&mut self.store, deps_ptr as usize, &mut deps_buf)?;
-            while deps_buf[0] != 0 {
-                let c = deps_buf[0] as char;
+            let memory = memory.data(&mut self.store);
+            while memory[deps_ptr] != 0 {
+                let c = memory[deps_ptr] as char;
                 if c == ';' {
                     deps.push(String::new());
                 } else {
-                    deps.last_mut().unwrap().push(c);
+                    deps.last_mut().unwrap().push(c)
                 }
                 deps_ptr += 1;
-                memory.read(&mut self.store, deps_ptr as usize, &mut deps_buf)?;
             }
         }
+
+        let mut name = String::new();
+        match instance.get_typed_func::<(), u32>(&mut self.store, NAME_EXPORT) {
+            Ok(name_fn) => {
+                let mut name_ptr = name_fn.call(&mut self.store, ())? as usize;
+                let memory = memory.data(&mut self.store);
+                while memory[name_ptr] != 0 {
+                    name.push(memory[name_ptr] as char);
+                    name_ptr += 1;
+                }
+            }
+            Err(_) => {
+                return Err(wasmtime::Error::msg(format!(
+                    "Couldn't find {NAME_EXPORT} in module {module:?}"
+                )))
+            }
+        }
+
         let exports = module.exports().map(|e| e.name().to_string()).collect();
         Ok(PlugMetadata {
+            name,
             deps,
             exports,
             imports,
         })
     }
 
-    /// Add plug (without linking except host functions)
-    pub fn add(&mut self, file_path: &str, engine: &Engine) -> wasmtime::Result<()> {
-        let fp = Path::new(file_path);
-        let ext = fp.extension().unwrap();
-        let ext_len = ext.len();
-        let name = fp.file_name().unwrap().to_str().unwrap();
-        let len = name.len();
-        let name = &name[..len - ext_len - 1];
-        let module = Module::from_file(engine, file_path)?;
-
+    /// Load wasm module and add it to the list of plugins. Will throw an error if the plugin name already exists.
+    /// Will only link with host functions.
+    pub fn load_module(&mut self, module: Module, engine: &Engine) -> wasmtime::Result<()> {
         let metadata = self.extract_metadata(engine, &module)?;
 
         let mut linker = Linker::new(engine);
@@ -162,8 +175,15 @@ impl<T> Plugs<T> {
         // Link host functions
         self.link_host(&mut linker)?;
 
+        if self.items.contains_key(&metadata.name) {
+            return Err(wasmtime::Error::msg(format!(
+                "Plugin with name `{}` already exists",
+                metadata.name
+            )));
+        }
+
         self.items.insert(
-            name.to_string(),
+            metadata.name.clone(),
             Plug {
                 id: self.order.len(),
                 module,
@@ -174,9 +194,23 @@ impl<T> Plugs<T> {
                 imports: metadata.imports,
             },
         );
-        self.order.push(name.to_string());
+        self.order.push(metadata.name);
 
         Ok(())
+    }
+
+    /// Load plugin from the provided binary (see `load_module`)
+    pub fn load_binary(&mut self, bin: impl AsRef<[u8]>, engine: &Engine) -> wasmtime::Result<()> {
+        let module = Module::from_binary(engine, bin.as_ref())?;
+
+        self.load_module(module, engine)
+    }
+
+    /// Load plugin from the file system (see `load_module`)
+    pub fn load(&mut self, file_path: impl AsRef<Path>, engine: &Engine) -> wasmtime::Result<()> {
+        let module = Module::from_file(engine, file_path)?;
+
+        self.load_module(module, engine)
     }
 
     /// Link all plugs, load order is important (TODO: auto sorting)

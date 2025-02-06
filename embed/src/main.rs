@@ -55,11 +55,11 @@ fn main() -> wasmtime::Result<()> {
     plugs.add_host_fn("print2".to_string(), my_core::print2);
 
     // Load order is important and circular dependencies are disallowed
-    plugs.add("../plug1.wasm", &engine)?;
-    plugs.add("../plug2.wasm", &engine)?;
-    plugs.add("../plug3.wasm", &engine)?;
-    plugs.add("../plug4.wasm", &engine)?;
-    plugs.add("../plug5.wasm", &engine)?;
+    plugs.load("../plug1.wasm", &engine)?;
+    plugs.load("../plug2.wasm", &engine)?;
+    plugs.load("../plug3.wasm", &engine)?;
+    plugs.load("../plug4.wasm", &engine)?;
+    plugs.load("../plug5.wasm", &engine)?;
 
     for (name, plug) in plugs.items.iter() {
         println!("[INFO]: '{name}' metadata:");
