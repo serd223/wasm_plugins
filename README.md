@@ -75,13 +75,13 @@ const char* __deps() {
     return "plug1;plug2";
 }
 ```
-The names you supply in this function are the same names that are exported by the plugin's `__name`. Then you can forward declare any functions you want to use from the other plugin.
+Then plugins can forward declare any functions they want to use from the other plugin.
 
 During linkage, `Plugs::link` looks for a plugin's unknown imports inside the dependencies exported by `__deps`. The order of which these dependencies are imported is also important. If two dependencies export a function with the same name and the dependent wants to import this function, only the function from the dependency that was declared earlier in the list will be imported.
 
 ### __init
-`Plugs::init` executes each plugin's `__init` function. `Plugs::init` is typically called right after `Plugs::link` and before any `call` operations.
-A common use case for this function is to initialize memory for state management in WASM memory. (See [`plug1`](https://github.com/serd223/wlug/blob/master/examples/plugs/plug1/src/lib.rs)) 
+`Plugs::init` executes each plugin's `__init` function. `Plugs::init` isn't automatically called and should typically be called right after `Plugs::link` and before any `call` operations.
+A common use case for this function is to initialize memory in plugins for state management in WASM memory. (See [`plug1`](https://github.com/serd223/wlug/blob/master/examples/plugs/plug1/src/lib.rs)) 
 ```rs
 // Rust
 #[no_mangle]
