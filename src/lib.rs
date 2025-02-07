@@ -372,6 +372,16 @@ impl<'a, T> Plugs<'a, T> {
         }
     }
 
+    /// Return a '&' reference to the user defined state
+    pub fn state(&self) -> &T {
+        &self.store.data().1
+    }
+
+    /// Return a mutable reference to the user defined state
+    pub fn state_mut(&mut self) -> &mut T {
+        &mut self.store.data_mut().1
+    }
+
     /// Call the init functions of all plugins. This method looks for an export matches `self.init_export`
     /// As an init export is optional in plugins, this method will just skip plugins without an init export.
     pub fn init(&mut self) -> wasmtime::Result<()> {
