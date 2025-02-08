@@ -62,6 +62,8 @@ const char* __name() {
 Plugins can optionally export a `__deps` function which returns a null-terminated string that contains the list of plugins they depend on seperated by semicolons (';'). 
 
 The plugin names used in this functions are the same names that plugins export with their `__name` function.
+
+This export is optional and `Plugs::extract_metadata` will just skip calling a plugin's `__deps` if it doesn't export it.
 ```rs
 // Rust
 #[no_mangle]
@@ -82,6 +84,8 @@ During linkage, `Plugs::link` looks for a plugin's unknown imports inside the de
 ### __init
 `Plugs::init` executes each plugin's `__init` function. `Plugs::init` isn't automatically called and should typically be called right after `Plugs::link` and before any `call` operations.
 A common use case for this function is to initialize memory in plugins for state management in WASM memory. (See [`plug1`](https://github.com/serd223/wlug/blob/master/examples/plugs/plug1/src/lib.rs)) 
+
+This export is optional and `Plugs::init` will just skip calling a plugin's `__init` if it doesn't export it.
 ```rs
 // Rust
 #[no_mangle]
@@ -93,6 +97,24 @@ pub extern "C" fn __init() {
 // C
 void __init() {
     // do init
+}
+```
+
+### __reset
+Similar to `__init`, the `__reset` export of each plugin is called inside of `Plugs::reset`. This export can be used to handle state management between plugin reloads.
+
+This export is optional and `Plugs::reset` will just skip calling a plugin's `__reset` if it doesn't export it.
+```rs
+// Rust
+#[no_mangle]
+pub extern "C" fn __reset() {
+    // do reset
+}
+```
+```c
+// C
+void __reset() {
+    // do reset
 }
 ```
 
