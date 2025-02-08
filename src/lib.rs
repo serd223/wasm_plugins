@@ -382,6 +382,7 @@ impl<'a, T> Plugs<'a, T> {
                 if let Ok(reset_fn) =
                     inst.get_typed_func::<(), ()>(&mut self.store, self.reset_export)
                 {
+                    self.store.data_mut().0 = p.id;
                     reset_fn.call(&mut self.store, ())?;
                 }
             }
