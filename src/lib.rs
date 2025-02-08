@@ -229,7 +229,8 @@ impl<'a, T> Plugs<'a, T> {
 
     /// Load wasm module and add it to the list of plugins. Will throw an error if the plugin name already exists.
     /// Will only link with host functions.
-    pub fn load_module(&mut self, module: Module, engine: &Engine) -> wasmtime::Result<()> {
+    /// Returns the id of the loaded plugin if load was successful
+    pub fn load_module(&mut self, module: Module, engine: &Engine) -> wasmtime::Result<PlugId> {
         let metadata = self.extract_metadata(engine, &module)?;
 
         let mut linker = Linker::new(engine);
@@ -244,10 +245,11 @@ impl<'a, T> Plugs<'a, T> {
             )));
         }
 
+        let id = self.order.len();
         self.items.insert(
             metadata.name.clone(),
             Plug {
-                id: self.order.len(),
+                id,
                 module,
                 linker,
                 instance: None,
@@ -258,18 +260,26 @@ impl<'a, T> Plugs<'a, T> {
         );
         self.order.push(metadata.name);
 
-        Ok(())
+        Ok(id)
     }
 
-    /// Load plugin from the provided binary (see `load_module`)
-    pub fn load_binary(&mut self, bin: impl AsRef<[u8]>, engine: &Engine) -> wasmtime::Result<()> {
+    /// Load plugin from the provided binary and return is id (see `load_module`)
+    pub fn load_binary(
+        &mut self,
+        bin: impl AsRef<[u8]>,
+        engine: &Engine,
+    ) -> wasmtime::Result<PlugId> {
         let module = Module::from_binary(engine, bin.as_ref())?;
 
         self.load_module(module, engine)
     }
 
-    /// Load plugin from the file system (see `load_module`)
-    pub fn load(&mut self, file_path: impl AsRef<Path>, engine: &Engine) -> wasmtime::Result<()> {
+    /// Load plugin from the file system and return its id (see `load_module`)
+    pub fn load(
+        &mut self,
+        file_path: impl AsRef<Path>,
+        engine: &Engine,
+    ) -> wasmtime::Result<PlugId> {
         let module = Module::from_file(engine, file_path)?;
 
         self.load_module(module, engine)
@@ -414,15 +424,7 @@ impl<'a, T> Plugs<'a, T> {
         self.store.data_mut().0 = plugin_id;
     }
 
-    /// Gets id of plugin by name
-    pub fn get_plug_id(&self, name: &str) -> Option<PlugId> {
-        if let Some(p) = self.items.get(name) {
-            return Some(p.id);
-        }
-        None
-    }
-
-    /// Looks up a function in the specified plugin and returns the id of the plugin and the function
+    /// Look up a function in the specified plugin and return the id of the plugin and the function
     pub fn get_func_with_id<P: WasmParams, R: WasmResults>(
         &mut self,
         plug: &str,
@@ -444,11 +446,44 @@ impl<'a, T> Plugs<'a, T> {
         }
     }
 
+    /// Get id of plugin by name
+    pub fn get_id(&self, name: &str) -> Option<PlugId> {
+        if let Some(p) = self.items.get(name) {
+            return Some(p.id);
+        }
+        None
+    }
+
+    /// Get name of plugin by id
+    pub fn get_name(&self, id: PlugId) -> Option<&String> {
+        self.order.get(id)
+    }
+
+    /// Get reference to plugin by name
+    pub fn get_plug(&self, name: &str) -> Option<&Plug<T>> {
+        self.items.get(name)
+    }
+
+    /// Get mutable reference to plugin by name
     pub fn get_plug_mut(&mut self, name: &str) -> Option<&mut Plug<T>> {
         self.items.get_mut(name)
     }
 
-    pub fn get_plug(&self, name: &str) -> Option<&Plug<T>> {
-        self.items.get(name)
+    /// Get reference to plugin by id
+    pub fn get_plug_id(&self, id: PlugId) -> Option<&Plug<T>> {
+        if let Some(name) = self.order.get(id) {
+            self.items.get(name)
+        } else {
+            None
+        }
+    }
+
+    /// Get mutable reference to plugin by id
+    pub fn get_plug_id_mut(&mut self, id: PlugId) -> Option<&mut Plug<T>> {
+        if let Some(name) = self.order.get(id) {
+            self.items.get_mut(name)
+        } else {
+            None
+        }
     }
 }
