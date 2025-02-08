@@ -154,37 +154,20 @@ impl<'a, T> Plugs<'a, T> {
     ) -> wasmtime::Result<PlugMetadata> {
         let mut linker = Linker::new(engine);
 
+        let exports = module.exports().map(|e| e.name().to_string()).collect();
         let mut imports = Vec::new();
-        let instance = loop {
-            match linker.instantiate(&mut self.store, &module) {
-                Ok(inst) => break inst,
-                Err(e) => {
-                    let e: UnknownImportError = e.downcast()?;
-                    let ftype = e.ty().func().unwrap().clone();
-                    let result_types = ftype.results().collect::<Vec<_>>();
-                    linker.func_new("env", e.name(), ftype, move |_, _, results| {
-                        for (i, res_type) in result_types.iter().enumerate() {
-                            results[i] = match res_type {
-                                ValType::I32 => Val::I32(0),
-                                ValType::I64 => Val::I64(0),
-                                ValType::F32 => Val::F32(0f32.to_bits()),
-                                ValType::F64 => Val::F64(0f64.to_bits()),
-                                ValType::V128 => Val::V128(0u128.into()),
-                                ValType::Ref(r) => Val::null_ref(r.heap_type()),
-                            };
-                        }
-
-                        Ok(())
-                    })?;
-                    let imp = e.name().to_string();
-                    let is_host_fn = self.host_fns.fns.iter().any(|(n, _)| imp.eq(n));
-                    if !is_host_fn {
-                        imports.push(e.name().to_string());
-                    }
-                    continue;
-                }
+        linker.define_unknown_imports_as_traps(&module)?;
+        let instance = linker.instantiate(&mut self.store, &module)?;
+        for imp in module.imports() {
+            let is_host_fn = self
+                .host_fns
+                .fns
+                .iter()
+                .any(|(name, _)| name.eq(imp.name()));
+            if !is_host_fn {
+                imports.push(imp.name().to_string());
             }
-        };
+        }
 
         let memory = {
             if let Some(m) = instance.get_memory(&mut self.store, "memory") {
@@ -229,7 +212,6 @@ impl<'a, T> Plugs<'a, T> {
             }
         }
 
-        let exports = module.exports().map(|e| e.name().to_string()).collect();
         Ok(PlugMetadata {
             name,
             deps,
