@@ -57,7 +57,7 @@ fn main() -> wasmtime::Result<()> {
     plugs.call::<_, ()>("plug5", "hello_from_c", (10i32, 20i32))?;
 
     println!("\n[INFO]: Reloading plugins while persisting the state...");
-    plugs.reset();
+    plugs.reset()?;
     plugs.load("plug1.wasm", &engine)?;
     plugs.load("plug2.wasm", &engine)?;
     plugs.load("plug3.wasm", &engine)?;

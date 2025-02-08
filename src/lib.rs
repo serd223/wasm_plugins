@@ -7,6 +7,7 @@ use wasmtime::{
 
 pub const DEFAULT_DEPS_EXPORT: &str = "__deps";
 pub const DEFAULT_INIT_EXPORT: &str = "__init";
+pub const DEFAULT_RESET_EXPORT: &str = "__reset";
 pub const DEFAULT_NAME_EXPORT: &str = "__name";
 
 pub type PlugId = usize;
@@ -60,6 +61,7 @@ pub struct Plugs<'a, T> {
     name_export: &'a str,
     deps_export: &'a str,
     init_export: &'a str,
+    reset_export: &'a str,
 }
 
 impl<'a, T> Plugs<'a, T> {
@@ -73,6 +75,7 @@ impl<'a, T> Plugs<'a, T> {
             name_export: DEFAULT_NAME_EXPORT,
             deps_export: DEFAULT_DEPS_EXPORT,
             init_export: DEFAULT_INIT_EXPORT,
+            reset_export: DEFAULT_RESET_EXPORT,
         }
     }
 
@@ -96,6 +99,14 @@ impl<'a, T> Plugs<'a, T> {
     pub fn with_init(self, init_export: &'a str) -> Self {
         Self {
             init_export,
+            ..self
+        }
+    }
+
+    /// Change `reset_export`
+    pub fn with_reset(self, reset_export: &'a str) -> Self {
+        Self {
+            reset_export,
             ..self
         }
     }
@@ -363,16 +374,27 @@ impl<'a, T> Plugs<'a, T> {
         Ok(())
     }
 
-    /// Reset `self` by clearing all plugins but doesn't reset the state inside `self.store`
-    pub fn reset(&mut self) {
+    /// Reset `self` by clearing all plugins and calling their (optional) reset exports but doesn't reset the state inside `self.store`
+    pub fn reset(&mut self) -> wasmtime::Result<()> {
+        // order isn't important since this will be called after instantiation anyway
+        for (_, p) in self.items.iter_mut() {
+            if let Some(inst) = &p.instance {
+                if let Ok(reset_fn) =
+                    inst.get_typed_func::<(), ()>(&mut self.store, self.reset_export)
+                {
+                    reset_fn.call(&mut self.store, ())?;
+                }
+            }
+        }
         self.items.clear();
         self.order.clear();
+        Ok(())
     }
 
     /// Reset `self` according to the given options
-    pub fn reset_with_options(&mut self, options: PlugsResetOptions<T>) {
+    pub fn reset_with_options(&mut self, options: PlugsResetOptions<T>) -> wasmtime::Result<()> {
         if options.plugs {
-            self.reset()
+            self.reset()?;
         }
         if let Some(new_state) = options.state {
             *self.store.data_mut() = PlugContext(0, new_state);
@@ -380,6 +402,8 @@ impl<'a, T> Plugs<'a, T> {
         if options.host_fns {
             self.host_fns.fns.clear();
         }
+
+        Ok(())
     }
 
     /// Return a '&' reference to the user defined state
