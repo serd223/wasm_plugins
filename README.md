@@ -5,7 +5,7 @@
 The [`embed`](https://github.com/serd223/wlug/tree/master/examples/embed.rs) example in the examples directory is an example that loads and executes the plugins inside [`examples/plugs/`](https://github.com/serd223/wlug/tree/master/examples/plugs) while also exporting some 'host functions' for the plugins to use.
 Plugins 1-4 are written in Rust and `plug5` is written in C.
 
-For more examples, see [wlug_examples]('https://github.com/serd223/wlug_examples').
+For more examples, see [wlug_examples](https://github.com/serd223/wlug_examples).
 
 ### Build instructions for the `embed` example
 ### Prerequisites
