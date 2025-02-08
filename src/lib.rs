@@ -1,8 +1,8 @@
 use std::{collections::HashMap, path::Path};
 
 use wasmtime::{
-    Engine, Extern, Func, Instance, IntoFunc, Linker, Module, Store, TypedFunc, UnknownImportError,
-    Val, ValType, WasmParams, WasmResults,
+    Engine, Extern, Func, Instance, IntoFunc, Linker, Module, Store, TypedFunc, WasmParams,
+    WasmResults,
 };
 
 pub const DEFAULT_DEPS_EXPORT: &str = "__deps";
