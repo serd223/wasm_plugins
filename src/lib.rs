@@ -154,7 +154,21 @@ impl<'a, T> Plugs<'a, T> {
     ) -> wasmtime::Result<PlugMetadata> {
         let mut linker = Linker::new(engine);
 
-        let exports = module.exports().map(|e| e.name().to_string()).collect();
+        let mut memory_exports = Vec::new();
+        let exports = module
+            .exports()
+            .map(|e| {
+                let name = e.name().to_string();
+                match e.ty() {
+                    wasmtime::ExternType::Memory(_) => {
+                        memory_exports.push(name.clone());
+                    }
+                    _ => (),
+                }
+
+                name
+            })
+            .collect();
         let mut imports = Vec::new();
         linker.define_unknown_imports_as_traps(&module)?;
         let instance = linker.instantiate(&mut self.store, &module)?;
@@ -169,13 +183,21 @@ impl<'a, T> Plugs<'a, T> {
             }
         }
 
+        if memory_exports.len() == 0 {
+            return Err(wasmtime::Error::msg("Couldn't find any memory export"));
+        }
         let memory = {
-            if let Some(m) = instance.get_memory(&mut self.store, "memory") {
-                m
-            } else {
-                return Err(wasmtime::Error::msg("Couldn't find 'memory' export"));
+            let mut res = Err(wasmtime::Error::msg(
+                "[UNREACHABLE] Had memory exports but couldn't get any of them",
+            ));
+            for m_name in memory_exports.iter() {
+                if let Some(m) = instance.get_memory(&mut self.store, m_name) {
+                    res = Ok(m);
+                    break;
+                }
             }
-        };
+            res
+        }?;
 
         // Extract dependencies (optional)
         let mut deps = Vec::new();
