@@ -105,7 +105,7 @@ pub enum LinkError {
         export_name: String,
         plug_name: String,
     },
-    InvalidDependency(String),
+    DependencyNotFound(String),
     UnresolvedImports {
         plug_name: String,
         unresolved_imports: Vec<String>,
@@ -127,7 +127,7 @@ impl std::fmt::Display for LinkError {
                 export_name,
                 plug_name,
             } => write!(f, "Dependency '{dep_name}' doesn't have export '{export_name}' required by plugin '{plug_name}'"),
-            LinkError::InvalidDependency(dep_name) => write!(f, "'{dep_name}' is not a valid dependency"),
+            LinkError::DependencyNotFound(dep_name) => write!(f, "Dependency '{dep_name}' couldn't be found"),
             LinkError::UnresolvedImports {
                 plug_name,
                 unresolved_imports,

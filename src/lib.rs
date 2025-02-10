@@ -360,7 +360,7 @@ impl<'a, T> Plugs<'a, T> {
                             res
                         };
                     } else {
-                        return Err(LinkError::InvalidDependency(dep_name.clone()).into());
+                        return Err(LinkError::DependencyNotFound(dep_name.clone()).into());
                     }
                 }
             }
