@@ -7,6 +7,12 @@ pub struct PluginAlreadyExists {
     pub(crate) name: String,
 }
 
+impl PluginAlreadyExists {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 impl std::fmt::Display for PluginAlreadyExists {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Plugin with name '{}' already exists", self.name)
