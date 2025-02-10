@@ -189,6 +189,7 @@ impl<'a, T> Plugs<'a, T> {
         // Extract dependencies (optional)
         let mut deps = Vec::new();
         if let Ok(deps_fn) = instance.get_typed_func::<(), u32>(&mut self.store, self.deps_export) {
+            self.set_current_id(id);
             let mut deps_ptr = deps_fn.call(&mut self.store, ())? as usize;
             deps.push(String::new());
             let memory = memory.data(&mut self.store);
@@ -206,6 +207,7 @@ impl<'a, T> Plugs<'a, T> {
         let mut name = String::new();
         match instance.get_typed_func::<(), u32>(&mut self.store, self.name_export) {
             Ok(name_fn) => {
+                self.set_current_id(id);
                 let mut name_ptr = name_fn.call(&mut self.store, ())? as usize;
                 let memory = memory.data(&mut self.store);
                 while memory[name_ptr] != 0 {
@@ -230,7 +232,7 @@ impl<'a, T> Plugs<'a, T> {
     }
 
     /// Load wasm module and add it to the list of plugins. Will throw an error if the plugin name already exists.
-    /// Will only link with host functions.
+    /// Doesn't perform any linking.
     /// Returns the id of the loaded plugin if load was successful
     pub fn load_module(&mut self, module: Module, engine: &Engine) -> wasmtime::Result<PlugId> {
         let id = self.names.len();
@@ -243,15 +245,10 @@ impl<'a, T> Plugs<'a, T> {
             )));
         }
 
-        let mut linker = Linker::new(engine);
-
-        // Link host functions
-        self.link_host(&mut linker)?;
-
         self.items.push(Plug {
             name: metadata.name.clone(),
             module,
-            linker,
+            linker: Linker::new(engine),
             instance: None,
             deps: metadata.deps,
             exports: metadata.exports,
@@ -284,7 +281,7 @@ impl<'a, T> Plugs<'a, T> {
         self.load_module(module, engine)
     }
 
-    /// Link all plugins, load order is important (TODO: auto sorting)
+    /// Link all plugins with host functions and each other, load order is important (TODO: auto sorting)
     /// and circular dependencies are disallowed (won't change, TODO: report as error)
     pub fn link(&mut self) -> wasmtime::Result<()> {
         // TODO: perhaps sort the plugins before linking them so that all plugins are guaranteed to be loaded after their dependencies
@@ -295,6 +292,13 @@ impl<'a, T> Plugs<'a, T> {
         // could be some edge case where the linker doesn't properly link everything especially if the dependency graph is very
         // convoluted and the circular dependency is deep within the dependency tree.
         for p_id in 0..self.items.len() {
+            // Link host functions
+            for (name, func) in self.host_fns.iter() {
+                self.items[p_id]
+                    .linker
+                    .define(&mut self.store, "env", name, func.clone())?;
+            }
+
             let p = &self.items[p_id];
             let deps = p.deps.clone();
             let mut imports = p.imports.clone();
