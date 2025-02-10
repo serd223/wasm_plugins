@@ -1,6 +1,18 @@
 # wlug
 `wlug` is a WASM plugin system that lets you easily embed WASM plugins written in any language inside your app, also allowing seamless interaction between your application and the plugins.
 
+This README contains build instructions for the examples and documentation on the basic structure of plugins.
+
+## Using `wlug` in your projects
+Currently `wlug` isn't on [crates.io](https://crates.io/) yet but you and add it to your project via this git repostiory by running the following in your project's root directory:
+```console
+    $ cargo add --git https://github.com/serd223/wlug wlug
+```
+Or you can add the following to the `dependencies` in your `Cargo.toml`:
+```toml
+wlug = { git = "https://github.com/serd223/wlug" }
+```
+
 ## Examples
 The [`embed`](https://github.com/serd223/wlug/tree/master/examples/embed.rs) example in the examples directory is an example that loads and executes the plugins inside [`examples/plugs/`](https://github.com/serd223/wlug/tree/master/examples/plugs) while also exporting some 'host functions' for the plugins to use.
 Plugins 1-4 are written in Rust and `plug5` is written in C.
