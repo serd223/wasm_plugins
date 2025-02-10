@@ -1,4 +1,7 @@
-use wlug::{wasmtime::Engine, Plugs};
+use wlug::{
+    wasmtime::{self, Engine},
+    Plugs,
+};
 
 #[derive(Default)]
 struct State {
@@ -86,8 +89,7 @@ fn main() -> wasmtime::Result<()> {
 
 mod my_core {
 
-    use wasmtime::Caller;
-    use wlug::PlugContext;
+    use wlug::{wasmtime::Caller, PlugContext};
 
     use crate::State;
 
