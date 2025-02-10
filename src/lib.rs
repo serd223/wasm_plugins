@@ -34,10 +34,6 @@ pub struct PlugMetadata {
     pub imports: Vec<String>,
 }
 
-struct PlugsHostFns {
-    fns: Vec<(String, Extern)>,
-}
-
 pub struct PlugsResetOptions<T> {
     pub plugs: bool,
     pub state: Option<T>,
@@ -60,7 +56,7 @@ pub struct Plugs<'a, T> {
     pub store: Store<PlugContext<T>>,
     items: HashMap<String, Plug<T>>,
     order: Vec<String>,
-    host_fns: PlugsHostFns,
+    host_fns: Vec<(String, Extern)>,
     name_export: &'a str,
     deps_export: &'a str,
     init_export: &'a str,
@@ -74,7 +70,7 @@ impl<'a, T> Plugs<'a, T> {
             store: Store::new(engine, PlugContext(0, state)),
             items: HashMap::new(),
             order: Vec::new(),
-            host_fns: PlugsHostFns { fns: Vec::new() },
+            host_fns: Vec::new(),
             name_export: DEFAULT_NAME_EXPORT,
             deps_export: DEFAULT_DEPS_EXPORT,
             init_export: DEFAULT_INIT_EXPORT,
@@ -126,7 +122,7 @@ impl<'a, T> Plugs<'a, T> {
 
     /// Returns a reference to the list of functions supplied by the host
     pub fn host_fns(&self) -> &Vec<(String, Extern)> {
-        &self.host_fns.fns
+        &self.host_fns
     }
 
     /// Adds a new host function, function parameters and results are passed through the generic types
@@ -137,12 +133,12 @@ impl<'a, T> Plugs<'a, T> {
     ) {
         let func = Func::wrap(&mut self.store, func);
         let func = Into::<Extern>::into(func);
-        self.host_fns.fns.push((name, func));
+        self.host_fns.push((name, func));
     }
 
     /// Define host functions in the provided linker
     pub fn link_host(&mut self, linker: &mut Linker<PlugContext<T>>) -> wasmtime::Result<()> {
-        for (name, func) in self.host_fns.fns.iter() {
+        for (name, func) in self.host_fns.iter() {
             linker.define(&mut self.store, "env", name, func.clone())?;
         }
         Ok(())
@@ -154,53 +150,40 @@ impl<'a, T> Plugs<'a, T> {
         &mut self,
         engine: &Engine,
         module: &Module,
+        id: PlugId,
     ) -> wasmtime::Result<PlugMetadata> {
-        let mut linker = Linker::new(engine);
-
-        let mut memory_exports = Vec::new();
-        let exports = module
-            .exports()
-            .map(|e| {
-                let name = e.name().to_string();
-                match e.ty() {
-                    wasmtime::ExternType::Memory(_) => {
-                        memory_exports.push(name.clone());
-                    }
-                    _ => (),
+        let imports = module
+            .imports()
+            .into_iter()
+            .filter_map(|imp| {
+                let is_host_fn = self.host_fns.iter().any(|(name, _)| name.eq(imp.name()));
+                if !is_host_fn {
+                    Some(imp.name().to_string())
+                } else {
+                    None
                 }
-
-                name
             })
             .collect();
-        let mut imports = Vec::new();
-        linker.define_unknown_imports_as_traps(&module)?;
-        let instance = linker.instantiate(&mut self.store, &module)?;
-        for imp in module.imports() {
-            let is_host_fn = self
-                .host_fns
-                .fns
-                .iter()
-                .any(|(name, _)| name.eq(imp.name()));
-            if !is_host_fn {
-                imports.push(imp.name().to_string());
-            }
-        }
+        let exports = module.exports().map(|e| e.name().to_string()).collect();
 
-        if memory_exports.len() == 0 {
-            return Err(wasmtime::Error::msg("Couldn't find any memory export"));
-        }
-        let memory = {
-            let mut res = Err(wasmtime::Error::msg(
-                "[UNREACHABLE] Had memory exports but couldn't get any of them",
-            ));
-            for m_name in memory_exports.iter() {
-                if let Some(m) = instance.get_memory(&mut self.store, m_name) {
-                    res = Ok(m);
-                    break;
-                }
+        let mut linker = Linker::new(engine);
+        linker.define_unknown_imports_as_traps(&module)?;
+
+        let instance = linker.instantiate(&mut self.store, &module)?;
+
+        let memory = if let Some(m) = instance.get_export(&mut self.store, "memory") {
+            if let Some(m) = m.into_memory() {
+                m
+            } else {
+                return Err(wasmtime::Error::msg(format!(
+                    "'memory' export isn't a WASM memory in plugin with id: {id}"
+                )));
             }
-            res
-        }?;
+        } else {
+            return Err(wasmtime::Error::msg(format!(
+                "Couldn't find 'memory' export in plugin with id: {id}"
+            )));
+        };
 
         // Extract dependencies (optional)
         let mut deps = Vec::new();
@@ -249,7 +232,8 @@ impl<'a, T> Plugs<'a, T> {
     /// Will only link with host functions.
     /// Returns the id of the loaded plugin if load was successful
     pub fn load_module(&mut self, module: Module, engine: &Engine) -> wasmtime::Result<PlugId> {
-        let metadata = self.extract_metadata(engine, &module)?;
+        let id = self.order.len();
+        let metadata = self.extract_metadata(engine, &module, id)?;
 
         let mut linker = Linker::new(engine);
 
@@ -263,7 +247,6 @@ impl<'a, T> Plugs<'a, T> {
             )));
         }
 
-        let id = self.order.len();
         self.items.insert(
             metadata.name.clone(),
             Plug {
@@ -408,7 +391,7 @@ impl<'a, T> Plugs<'a, T> {
             *self.store.data_mut() = PlugContext(0, new_state);
         }
         if options.host_fns {
-            self.host_fns.fns.clear();
+            self.host_fns.clear();
         }
 
         Ok(())
