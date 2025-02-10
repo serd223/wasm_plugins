@@ -5,3 +5,10 @@ edition = "2021"
 
 [dependencies]
 wasmtime = "29.0.1"
+
+[dev-dependencies]
+# Specify example plugins as dev-dependencies so cargo doesn't get confused
+plug1 = { path = "examples/plugs/plug1/" }
+plug2 = { path = "examples/plugs/plug2/" }
+plug3 = { path = "examples/plugs/plug3/" }
+plug4 = { path = "examples/plugs/plug4/" }
