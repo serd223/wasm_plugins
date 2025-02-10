@@ -1,5 +1,4 @@
-use wasmtime::*;
-use wlug::Plugs;
+use wlug::{wasmtime::Engine, Plugs};
 
 #[derive(Default)]
 struct State {

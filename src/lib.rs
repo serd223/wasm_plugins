@@ -5,6 +5,9 @@ use wasmtime::{
     WasmResults,
 };
 
+// Re-export wasmtime
+pub use wasmtime;
+
 pub const DEFAULT_DEPS_EXPORT: &str = "__deps";
 pub const DEFAULT_INIT_EXPORT: &str = "__init";
 pub const DEFAULT_RESET_EXPORT: &str = "__reset";
