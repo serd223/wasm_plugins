@@ -19,8 +19,8 @@ fn main() -> wasmtime::Result<()> {
     // .with_deps("__deps")
     // .with_init("__init")
 
-    plugs.add_host_fn("print".to_string(), my_core::print);
-    plugs.add_host_fn("print2".to_string(), my_core::print2);
+    plugs.add_host_fn("print", my_core::print);
+    plugs.add_host_fn("print2", my_core::print2);
 
     // Load order is important and circular dependencies are disallowed
     plugs.load("plug1.wasm", &engine)?;
@@ -29,8 +29,8 @@ fn main() -> wasmtime::Result<()> {
     plugs.load("plug4.wasm", &engine)?;
     plugs.load("plug5.wasm", &engine)?;
 
-    for (name, plug) in plugs.items().iter() {
-        println!("[INFO]: '{name}' metadata:");
+    for plug in plugs.items().iter() {
+        println!("[INFO]: '{}' metadata:", plug.name);
         println!("[INFO]:     exports: {:?}", plug.exports);
         println!("[INFO]:     imports: {:?}\n", plug.imports);
     }

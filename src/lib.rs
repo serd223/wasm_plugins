@@ -18,7 +18,7 @@ pub type PlugId = usize;
 pub struct PlugContext<T>(pub PlugId, pub T);
 
 pub struct Plug<T> {
-    pub id: PlugId,
+    pub name: String,
     pub module: Module,
     pub linker: Linker<PlugContext<T>>,
     pub instance: Option<Instance>,
@@ -54,8 +54,8 @@ impl<T> PlugsResetOptions<T> {
 /// The main entry point of `wlug`, you can create a `Plugs` instance with `Plugs::new`
 pub struct Plugs<'a, T> {
     pub store: Store<PlugContext<T>>,
-    items: HashMap<String, Plug<T>>,
-    order: Vec<String>,
+    items: Vec<Plug<T>>,
+    names: HashMap<String, PlugId>,
     host_fns: Vec<(String, Extern)>,
     name_export: &'a str,
     deps_export: &'a str,
@@ -68,8 +68,8 @@ impl<'a, T> Plugs<'a, T> {
     pub fn new(engine: &Engine, state: T) -> Self {
         Self {
             store: Store::new(engine, PlugContext(0, state)),
-            items: HashMap::new(),
-            order: Vec::new(),
+            items: Vec::new(),
+            names: HashMap::new(),
             host_fns: Vec::new(),
             name_export: DEFAULT_NAME_EXPORT,
             deps_export: DEFAULT_DEPS_EXPORT,
@@ -110,14 +110,15 @@ impl<'a, T> Plugs<'a, T> {
         }
     }
 
-    /// Returns a reference to the HashMap that contains plugin names and plugins
-    pub fn items(&self) -> &HashMap<String, Plug<T>> {
+    /// Returns a reference to the vector that contains loaded plugins in their load order
+    /// This vector can be indexed with PlugId's to access plugins.
+    pub fn items(&self) -> &Vec<Plug<T>> {
         &self.items
     }
 
-    /// Returns a reference to the list of plugin names in their load order
-    pub fn order(&self) -> &Vec<String> {
-        &self.order
+    /// Returns a reference to the HashMap that is used to lookup plugin ids by their name
+    pub fn names(&self) -> &HashMap<String, PlugId> {
+        &self.names
     }
 
     /// Returns a reference to the list of functions supplied by the host
@@ -128,12 +129,12 @@ impl<'a, T> Plugs<'a, T> {
     /// Adds a new host function, function parameters and results are passed through the generic types
     pub fn add_host_fn<Params, Results>(
         &mut self,
-        name: String,
+        name: &str,
         func: impl IntoFunc<PlugContext<T>, Params, Results>,
     ) {
         let func = Func::wrap(&mut self.store, func);
         let func = Into::<Extern>::into(func);
-        self.host_fns.push((name, func));
+        self.host_fns.push((name.to_string(), func));
     }
 
     /// Define host functions in the provided linker
@@ -176,12 +177,12 @@ impl<'a, T> Plugs<'a, T> {
                 m
             } else {
                 return Err(wasmtime::Error::msg(format!(
-                    "'memory' export isn't a WASM memory in plugin with id: {id}"
+                    "'memory' export isn't a WASM memory in plugin with id: '{id}'"
                 )));
             }
         } else {
             return Err(wasmtime::Error::msg(format!(
-                "Couldn't find 'memory' export in plugin with id: {id}"
+                "Couldn't find 'memory' export in plugin with id: '{id}'"
             )));
         };
 
@@ -214,7 +215,7 @@ impl<'a, T> Plugs<'a, T> {
             }
             Err(_) => {
                 return Err(wasmtime::Error::msg(format!(
-                    "Couldn't find {} in module {module:?}",
+                    "Couldn't find '{}' in plugin with id: '{id}'",
                     self.name_export
                 )))
             }
@@ -232,39 +233,36 @@ impl<'a, T> Plugs<'a, T> {
     /// Will only link with host functions.
     /// Returns the id of the loaded plugin if load was successful
     pub fn load_module(&mut self, module: Module, engine: &Engine) -> wasmtime::Result<PlugId> {
-        let id = self.order.len();
+        let id = self.names.len();
         let metadata = self.extract_metadata(engine, &module, id)?;
 
-        let mut linker = Linker::new(engine);
-
-        // Link host functions
-        self.link_host(&mut linker)?;
-
-        if self.items.contains_key(&metadata.name) {
+        if self.names.contains_key(&metadata.name) {
             return Err(wasmtime::Error::msg(format!(
                 "Plugin with name `{}` already exists",
                 metadata.name
             )));
         }
 
-        self.items.insert(
-            metadata.name.clone(),
-            Plug {
-                id,
-                module,
-                linker,
-                instance: None,
-                deps: metadata.deps,
-                exports: metadata.exports,
-                imports: metadata.imports,
-            },
-        );
-        self.order.push(metadata.name);
+        let mut linker = Linker::new(engine);
+
+        // Link host functions
+        self.link_host(&mut linker)?;
+
+        self.items.push(Plug {
+            name: metadata.name.clone(),
+            module,
+            linker,
+            instance: None,
+            deps: metadata.deps,
+            exports: metadata.exports,
+            imports: metadata.imports,
+        });
+        self.names.insert(metadata.name, id);
 
         Ok(id)
     }
 
-    /// Load plugin from the provided binary and return is id (see `load_module`)
+    /// Load plugin from the provided binary and return its id (see `load_module`)
     pub fn load_binary(
         &mut self,
         bin: impl AsRef<[u8]>,
@@ -296,8 +294,8 @@ impl<'a, T> Plugs<'a, T> {
         // depends on which symbols and that isn't really enough to properly resolve all cases. If we were to just use that info, there
         // could be some edge case where the linker doesn't properly link everything especially if the dependency graph is very
         // convoluted and the circular dependency is deep within the dependency tree.
-        for name in self.order.iter() {
-            let p = self.items.get(name.as_str()).unwrap();
+        for p_id in 0..self.items.len() {
+            let p = &self.items[p_id];
             let deps = p.deps.clone();
             let mut imports = p.imports.clone();
             let mut to_import = Vec::new();
@@ -307,16 +305,16 @@ impl<'a, T> Plugs<'a, T> {
 
             if imports.len() > 0 {
                 for dep_name in deps.iter() {
-                    if let Some(p_dep) = self.items.get(dep_name) {
+                    if let Some(&p_dep_id) = self.names.get(dep_name) {
                         imports = {
                             let mut res = Vec::new();
                             for imp in imports {
-                                let exists = p_dep.exports.contains(&imp);
+                                let exists = self.items[p_dep_id].exports.contains(&imp);
                                 if exists {
-                                    let inst = if let Some(inst) = &p_dep.instance {
+                                    let inst = if let Some(inst) = &self.items[p_dep_id].instance {
                                         inst
                                     } else {
-                                        return Err(wasmtime::Error::msg(format!("Dependency '{dep_name}' in plugin '{name}' hasn't been instantiated yet")));
+                                        return Err(wasmtime::Error::msg(format!("Dependency '{dep_name}' in plugin '{}' hasn't been instantiated yet", p.name)));
                                     };
 
                                     let export = if let Some(e) =
@@ -324,7 +322,7 @@ impl<'a, T> Plugs<'a, T> {
                                     {
                                         e
                                     } else {
-                                        return Err(wasmtime::Error::msg(format!("Dependency '{dep_name}' doesn't have export '{imp}' required by plugin '{name}'")));
+                                        return Err(wasmtime::Error::msg(format!("Dependency '{dep_name}' doesn't have export '{imp}' required by plugin '{}'", p.name)));
                                     };
 
                                     // #[cfg(debug_assertions)]
@@ -346,15 +344,14 @@ impl<'a, T> Plugs<'a, T> {
                 }
             }
 
-            let p = self.items.get_mut(name.as_str()).unwrap();
-
             if imports.len() > 0 {
                 return Err(wasmtime::Error::msg(format!(
-                    "Plugin '{name}' has unresolved imports: {:?}",
-                    imports
+                    "Plugin '{}' has unresolved imports: {:?}",
+                    p.name, imports
                 )));
             }
 
+            let p = &mut self.items[p_id];
             for (imp, export) in to_import {
                 p.linker.define(&mut self.store, "env", &imp, export)?;
             }
@@ -366,19 +363,18 @@ impl<'a, T> Plugs<'a, T> {
 
     /// Reset `self` by clearing all plugins and calling their (optional) reset exports but doesn't reset the state inside `self.store`
     pub fn reset(&mut self) -> wasmtime::Result<()> {
-        // order isn't important since this will be called after instantiation anyway
-        for (_, p) in self.items.iter_mut() {
+        for (id, p) in self.items.iter_mut().enumerate() {
             if let Some(inst) = &p.instance {
                 if let Ok(reset_fn) =
                     inst.get_typed_func::<(), ()>(&mut self.store, self.reset_export)
                 {
-                    self.store.data_mut().0 = p.id;
+                    self.store.data_mut().0 = id;
                     reset_fn.call(&mut self.store, ())?;
                 }
             }
         }
         self.items.clear();
-        self.order.clear();
+        self.names.clear();
         Ok(())
     }
 
@@ -410,10 +406,13 @@ impl<'a, T> Plugs<'a, T> {
     /// Call the init functions of all plugins. This method looks for an export matches `self.init_export`
     /// As an init export is optional in plugins, this method will just skip plugins without an init export.
     pub fn init(&mut self) -> wasmtime::Result<()> {
-        let names = self.order.clone();
-
+        let names = self
+            .names
+            .keys()
+            .map(|s| s.clone())
+            .collect::<Vec<String>>();
         for name in names {
-            if let Ok((id, init_fn)) = self.get_func_with_id::<(), ()>(&name, self.init_export) {
+            if let Ok((id, init_fn)) = self.get_func::<(), ()>(&name, self.init_export) {
                 self.set_current_id(id);
                 init_fn.call(&mut self.store, ())?;
             }
@@ -429,7 +428,7 @@ impl<'a, T> Plugs<'a, T> {
         func: &str,
         params: P,
     ) -> wasmtime::Result<R> {
-        let (id, f) = self.get_func_with_id(plug, func)?;
+        let (id, f) = self.get_func(plug, func)?;
         self.set_current_id(id);
         f.call(&mut self.store, params)
     }
@@ -439,66 +438,72 @@ impl<'a, T> Plugs<'a, T> {
         self.store.data_mut().0 = plugin_id;
     }
 
-    /// Look up a function in the specified plugin and return the id of the plugin and the function
-    pub fn get_func_with_id<P: WasmParams, R: WasmResults>(
+    /// Look up a function by its name and its plugin's id and return the function
+    pub fn get_func_by_id<P: WasmParams, R: WasmResults>(
         &mut self,
-        plug: &str,
+        plug_id: PlugId,
         func: &str,
-    ) -> wasmtime::Result<(PlugId, TypedFunc<P, R>)> {
-        if let Some(p) = self.items.get(plug) {
-            if let Some(inst) = &p.instance {
+    ) -> wasmtime::Result<TypedFunc<P, R>> {
+        if let Some(p) = self.items.get(plug_id) {
+            if let Some(inst) = p.instance {
                 inst.get_typed_func::<P, R>(&mut self.store, func)
-                    .map(|f| (p.id, f))
+                    .map(|f| f)
             } else {
                 Err(wasmtime::Error::msg(format!(
-                    "Plugin '{plug}' hasn't been instantiated yet"
+                    "Plugin '{}' hasn't been instantiated yet",
+                    p.name
                 )))
             }
         } else {
             Err(wasmtime::Error::msg(format!(
-                "Couldn't find function '{func}' in plugin '{plug}'"
+                "Plugin with id '{plug_id}' doesn't exist"
+            )))
+        }
+    }
+
+    /// Look up a function by name and return the id of the plugin and the function
+    pub fn get_func<P: WasmParams, R: WasmResults>(
+        &mut self,
+        plug: &str,
+        func: &str,
+    ) -> wasmtime::Result<(PlugId, TypedFunc<P, R>)> {
+        if let Some(&p_id) = self.names.get(plug) {
+            self.get_func_by_id::<P, R>(p_id, func)
+                .and_then(|f| Ok((p_id, f)))
+        } else {
+            Err(wasmtime::Error::msg(format!(
+                "Plugin '{plug}' doesn't exist"
             )))
         }
     }
 
     /// Get id of plugin by name
     pub fn get_id(&self, name: &str) -> Option<PlugId> {
-        if let Some(p) = self.items.get(name) {
-            return Some(p.id);
-        }
-        None
+        self.names.get(name).cloned()
     }
 
     /// Get name of plugin by id
     pub fn get_name(&self, id: PlugId) -> Option<&String> {
-        self.order.get(id)
+        self.items.get(id).and_then(|p| Some(&p.name))
     }
 
     /// Get reference to plugin by name
     pub fn get_plug(&self, name: &str) -> Option<&Plug<T>> {
-        self.items.get(name)
+        self.get_id(name).and_then(|id| Some(&self.items[id]))
     }
 
     /// Get mutable reference to plugin by name
     pub fn get_plug_mut(&mut self, name: &str) -> Option<&mut Plug<T>> {
-        self.items.get_mut(name)
+        self.get_id(name).and_then(|id| Some(&mut self.items[id]))
     }
 
     /// Get reference to plugin by id
     pub fn get_plug_id(&self, id: PlugId) -> Option<&Plug<T>> {
-        if let Some(name) = self.order.get(id) {
-            self.items.get(name)
-        } else {
-            None
-        }
+        self.items.get(id)
     }
 
     /// Get mutable reference to plugin by id
     pub fn get_plug_id_mut(&mut self, id: PlugId) -> Option<&mut Plug<T>> {
-        if let Some(name) = self.order.get(id) {
-            self.items.get_mut(name)
-        } else {
-            None
-        }
+        self.items.get_mut(id)
     }
 }
