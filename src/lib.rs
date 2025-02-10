@@ -1,4 +1,5 @@
 use std::{collections::HashMap, path::Path};
+mod errors;
 
 use wasmtime::{
     Engine, Extern, Func, Instance, IntoFunc, Linker, Module, Store, TypedFunc, WasmParams,
@@ -7,6 +8,8 @@ use wasmtime::{
 
 // Re-export wasmtime
 pub use wasmtime;
+
+pub use errors::*;
 
 pub const DEFAULT_DEPS_EXPORT: &str = "__deps";
 pub const DEFAULT_INIT_EXPORT: &str = "__init";
@@ -176,14 +179,20 @@ impl<'a, T> Plugs<'a, T> {
             if let Some(m) = m.into_memory() {
                 m
             } else {
-                return Err(wasmtime::Error::msg(format!(
-                    "'memory' export isn't a WASM memory in plugin with id: '{id}'"
-                )));
+                return Err(ExportNotFound {
+                    export_name: "memory".to_string(),
+                    plug_name: format!("<no-name>, id:{id}"),
+                    expected_ty: ExportType::Memory,
+                }
+                .into());
             }
         } else {
-            return Err(wasmtime::Error::msg(format!(
-                "Couldn't find 'memory' export in plugin with id: '{id}'"
-            )));
+            return Err(ExportNotFound {
+                export_name: "memory".to_string(),
+                plug_name: format!("<no-name>, id:{id}"),
+                expected_ty: ExportType::Memory,
+            }
+            .into());
         };
 
         // Extract dependencies (optional)
@@ -216,10 +225,12 @@ impl<'a, T> Plugs<'a, T> {
                 }
             }
             Err(_) => {
-                return Err(wasmtime::Error::msg(format!(
-                    "Couldn't find '{}' in plugin with id: '{id}'",
-                    self.name_export
-                )))
+                return Err(ExportNotFound {
+                    export_name: self.name_export.to_string(),
+                    plug_name: format!("<no-name>, id:{id}"),
+                    expected_ty: ExportType::Func,
+                }
+                .into());
             }
         }
 
@@ -239,10 +250,10 @@ impl<'a, T> Plugs<'a, T> {
         let metadata = self.extract_metadata(engine, &module, id)?;
 
         if self.names.contains_key(&metadata.name) {
-            return Err(wasmtime::Error::msg(format!(
-                "Plugin with name `{}` already exists",
-                metadata.name
-            )));
+            return Err(PluginAlreadyExists {
+                name: metadata.name,
+            }
+            .into());
         }
 
         self.items.push(Plug {
@@ -318,16 +329,24 @@ impl<'a, T> Plugs<'a, T> {
                                     let inst = if let Some(inst) = &self.items[p_dep_id].instance {
                                         inst
                                     } else {
-                                        return Err(wasmtime::Error::msg(format!("Dependency '{dep_name}' in plugin '{}' hasn't been instantiated yet", p.name)));
+                                        return Err(LinkError::NotInstantiated {
+                                            dep_name: dep_name.clone(),
+                                            plug_name: p.name.clone(),
+                                        }
+                                        .into());
                                     };
 
-                                    let export = if let Some(e) =
-                                        inst.get_export(&mut self.store, &imp)
-                                    {
-                                        e
-                                    } else {
-                                        return Err(wasmtime::Error::msg(format!("Dependency '{dep_name}' doesn't have export '{imp}' required by plugin '{}'", p.name)));
-                                    };
+                                    let export =
+                                        if let Some(e) = inst.get_export(&mut self.store, &imp) {
+                                            e
+                                        } else {
+                                            return Err(LinkError::ExportNotFound {
+                                                dep_name: dep_name.clone(),
+                                                export_name: imp,
+                                                plug_name: p.name.clone(),
+                                            }
+                                            .into());
+                                        };
 
                                     // #[cfg(debug_assertions)]
                                     // println!("[Plugs::link]: Will define '{imp}' from '{dep_name}' in '{name}'");
@@ -341,18 +360,17 @@ impl<'a, T> Plugs<'a, T> {
                             res
                         };
                     } else {
-                        return Err(wasmtime::Error::msg(format!(
-                            "'{dep_name}' is not a valid dependency"
-                        )));
+                        return Err(LinkError::InvalidDependency(dep_name.clone()).into());
                     }
                 }
             }
 
             if imports.len() > 0 {
-                return Err(wasmtime::Error::msg(format!(
-                    "Plugin '{}' has unresolved imports: {:?}",
-                    p.name, imports
-                )));
+                return Err(LinkError::UnresolvedImports {
+                    plug_name: p.name.clone(),
+                    unresolved_imports: imports,
+                }
+                .into());
             }
 
             let p = &mut self.items[p_id];
@@ -459,9 +477,7 @@ impl<'a, T> Plugs<'a, T> {
                 )))
             }
         } else {
-            Err(wasmtime::Error::msg(format!(
-                "Plugin with id '{plug_id}' doesn't exist"
-            )))
+            Err(UnknownPlugin::Id(plug_id).into())
         }
     }
 
@@ -475,9 +491,7 @@ impl<'a, T> Plugs<'a, T> {
             self.get_func_by_id::<P, R>(p_id, func)
                 .and_then(|f| Ok((p_id, f)))
         } else {
-            Err(wasmtime::Error::msg(format!(
-                "Plugin '{plug}' doesn't exist"
-            )))
+            Err(UnknownPlugin::Name(plug.to_string()).into())
         }
     }
 
