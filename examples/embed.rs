@@ -18,6 +18,7 @@ fn main() -> wasmtime::Result<()> {
     // .with_name("__name")
     // .with_deps("__deps")
     // .with_init("__init")
+    // .with_reset("__reset")
 
     plugs.add_host_fn("print", my_core::print);
     plugs.add_host_fn("print2", my_core::print2);
