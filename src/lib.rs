@@ -254,7 +254,7 @@ impl<'a, T> Plugs<'a, T> {
     /// # Errors
     ///
     /// - Returns [`PluginAlreadyExists`] if the requested plugin name already exists.
-    /// - May return [`ExportNotFound`] or other `wasmtime` errors via [`wlug::Plugs::extract_metadata`].
+    /// - May return [`ExportNotFound`] or other `wasmtime` errors via [`Plugs::extract_metadata`].
     pub fn load_module(&mut self, module: Module, engine: &Engine) -> wasmtime::Result<PlugId> {
         let id = self.names.len();
         let metadata = self.extract_metadata(engine, &module, id)?;
@@ -284,7 +284,7 @@ impl<'a, T> Plugs<'a, T> {
     ///
     /// # Errors
     ///
-    /// - May return [`PluginAlreadyExists`], [`ExportNotFound`] or other `wasmtime` errors via [`wlug::Plugs::extract_metadata`].
+    /// - May return [`PluginAlreadyExists`], [`ExportNotFound`] or other `wasmtime` errors via [`Plugs::extract_metadata`].
     /// - May return `wasmtime` errors from [`wasmtime::Module::from_binary`].
     pub fn load_binary(
         &mut self,
@@ -300,7 +300,7 @@ impl<'a, T> Plugs<'a, T> {
     ///
     /// # Errors
     ///
-    /// - May return [`PluginAlreadyExists`], [`ExportNotFound`] or other `wasmtime` errors via [`wlug::Plugs::extract_metadata`].
+    /// - May return [`PluginAlreadyExists`], [`ExportNotFound`] or other `wasmtime` errors via [`Plugs::extract_metadata`].
     /// - May return `wasmtime` errors from [`wasmtime::Module::from_file`].
     pub fn load(
         &mut self,
@@ -317,7 +317,7 @@ impl<'a, T> Plugs<'a, T> {
     ///
     /// # Errors
     ///
-    /// - Returns [`LinkError`] in the case of a linker specific error. (See [`wlug::LinkError`] for more details.)
+    /// - Returns [`LinkError`] in the case of a linker specific error. (See [`LinkError`] for more details.)
     /// - May return `wasmtime` errors from [`wasmtime::Linker::define`] or [`wasmtime::Linker::instantiate`].
     pub fn link(&mut self) -> wasmtime::Result<()> {
         // TODO: perhaps sort the plugins before linking them so that all plugins are guaranteed to be loaded after their dependencies
@@ -450,7 +450,7 @@ impl<'a, T> Plugs<'a, T> {
         &mut self.store.data_mut().1
     }
 
-    /// Call the init functions of all plugins. This method looks for an export matches `self.init_export`
+    /// Call the init functions of all plugins. This method looks for an export with the same name as `self.init_export` in each plugin.
     /// As an init export is optional in plugins, this method will just skip plugins without an init export.
     pub fn init(&mut self) -> wasmtime::Result<()> {
         let names = self
@@ -468,11 +468,11 @@ impl<'a, T> Plugs<'a, T> {
         Ok(())
     }
 
-    /// Convenience function for calling function in a plugin and setting the plugin's id as the current
+    /// Convenience function for calling a function in a plugin and setting the plugin's id as the current
     ///
     /// # Errors
     ///
-    /// - May return [`UnknownPlugin::Name`] or other `wasmtime` errors via [`wlug::Plugs::get_func`].
+    /// - May return [`UnknownPlugin::Name`] or other `wasmtime` errors via [`Plugs::get_func`].
     pub fn call<P: WasmParams, R: WasmResults>(
         &mut self,
         plug: &str,

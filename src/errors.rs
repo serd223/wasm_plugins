@@ -3,6 +3,7 @@ use wasmtime::ExternType;
 use crate::PlugId;
 
 #[derive(Clone, Debug)]
+/// "Plugin with name '{name}' already exists"
 pub struct PluginAlreadyExists {
     pub(crate) name: String,
 }
@@ -23,7 +24,10 @@ impl core::error::Error for PluginAlreadyExists {}
 
 #[derive(Clone, Debug)]
 pub enum UnknownPlugin {
+    /// "Plugin with id '{id}' couldn't be found"
     Id(PlugId),
+
+    /// "Plugin '{name}' couldn't be found"
     Name(String),
 }
 
@@ -62,6 +66,8 @@ impl From<ExternType> for ExportType {
 }
 
 #[derive(Debug)]
+/// "Export '{export_name}' not found in plugin '{plug_name}'",
+/// The `expected_ty` field stores the expected type of the export which was not found.
 pub struct ExportNotFound {
     pub(crate) export_name: String,
     pub(crate) plug_name: String,
@@ -96,16 +102,20 @@ impl core::error::Error for ExportNotFound {}
 
 #[derive(Clone, Debug)]
 pub enum LinkError {
-    NotInstantiated {
-        dep_name: String,
-        plug_name: String,
-    },
+    /// "Dependency '{dep_name}' in plugin '{plug_name}' hasn't been instantiated yet"
+    NotInstantiated { dep_name: String, plug_name: String },
+
+    /// "Dependency '{dep_name}' doesn't have export '{export_name}' required by plugin '{plug_name}'"
     ExportNotFound {
         dep_name: String,
         export_name: String,
         plug_name: String,
     },
+
+    /// "Dependency '{dep_name}' couldn't be found"
     DependencyNotFound(String),
+
+    /// "Plugin '{plug_name}' has unresolved imports: {unresolved_imports:?}"
     UnresolvedImports {
         plug_name: String,
         unresolved_imports: Vec<String>,
