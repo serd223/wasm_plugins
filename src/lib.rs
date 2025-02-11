@@ -8,6 +8,7 @@ use wasmtime::{
 
 // Re-export wasmtime
 pub use wasmtime;
+pub use wasmtime::{Val, ValType};
 
 pub use errors::*;
 
@@ -484,6 +485,80 @@ impl<'a, T> Plugs<'a, T> {
         f.call(&mut self.store, params)
     }
 
+    /// Method for calling functions in plugins without knowing their type signature. The function returns a list of returns from the plugin function if such function could be found and if the arguements matched the functions type signature.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`UnknownPlugin::Name`] if the specified plugin couldn't be found.
+    /// - Returns [`ExportNotFound`] if the requested function name couldn't be found inside the plugin.
+    /// - Returns [`DynamicDispatchError`] if `args` didn't contain the same types as the requested function's arguements.
+    /// - May return `wasmtime` errors from [`wasmtime::Instance::get_func`], [`wasmtime::Func::call`] or other `wasmtime` APIs used internally.
+    pub fn call_dynamic(
+        &mut self,
+        plug: &str,
+        func: &str,
+        args: &[Val],
+    ) -> wasmtime::Result<Vec<Val>> {
+        if let Some(id) = self.get_id(plug) {
+            let p = self.items.get(id).unwrap();
+            if !p.exports.contains(&func.to_string()) {
+                return Err(ExportNotFound {
+                    export_name: func.to_string(),
+                    plug_name: p.name.clone(),
+                    expected_ty: ExportType::Func,
+                }
+                .into());
+            }
+
+            if let Some(inst) = &p.instance {
+                let f = inst.get_func(&mut self.store, func).ok_or(ExportNotFound {
+                    export_name: func.to_string(),
+                    plug_name: plug.to_string(),
+                    expected_ty: ExportType::Func,
+                })?;
+                let ftype = f.ty(&mut self.store);
+                let mut arg_types = Vec::with_capacity(args.len());
+                for i in 0..args.len() {
+                    arg_types.push(args[i].ty(&mut self.store)?);
+                }
+
+                if arg_types.len() != ftype.params().len() {
+                    return Err(DynamicDispatchError {
+                        func_name: func.to_string(),
+                        plugin_name: plug.to_string(),
+                        expected_signature: arg_types,
+                        actual_signature: ftype.params().collect::<Vec<ValType>>(),
+                    }
+                    .into());
+                }
+
+                for (i, param) in ftype.params().enumerate() {
+                    if !param.matches(&arg_types[i]) {
+                        return Err(DynamicDispatchError {
+                            func_name: func.to_string(),
+                            plugin_name: plug.to_string(),
+                            expected_signature: arg_types,
+                            actual_signature: ftype.params().collect::<Vec<ValType>>(),
+                        }
+                        .into());
+                    }
+                }
+
+                let mut returns = vec![Val::I32(0); ftype.results().len()];
+                self.set_current_id(id);
+                f.call(&mut self.store, args, &mut returns)?;
+                Ok(returns)
+            } else {
+                return Err(wasmtime::Error::msg(format!(
+                    "Plugin '{}' hasn't been instantiated yet",
+                    p.name
+                )));
+            }
+        } else {
+            Err(UnknownPlugin::Name(plug.to_string()).into())
+        }
+    }
+
     /// Must be set before calling any function
     pub fn set_current_id(&mut self, plugin_id: PlugId) {
         self.store.data_mut().0 = plugin_id;
@@ -494,6 +569,7 @@ impl<'a, T> Plugs<'a, T> {
     /// # Errors
     ///
     /// - Returns [`UnknownPlugin::Id`] if a plugin with the requested id couldn't be found.
+    /// - Returns [`ExportNotFound`] if the requested function name couldn't be found inside the plugin.
     /// - May return `wasmtime` errors from [`wasmtime::Instance::get_typed_func`].
     pub fn get_func_by_id<P: WasmParams, R: WasmResults>(
         &mut self,
@@ -501,6 +577,14 @@ impl<'a, T> Plugs<'a, T> {
         func: &str,
     ) -> wasmtime::Result<TypedFunc<P, R>> {
         if let Some(p) = self.items.get(plug_id) {
+            if !p.exports.contains(&func.to_string()) {
+                return Err(ExportNotFound {
+                    export_name: func.to_string(),
+                    plug_name: p.name.clone(),
+                    expected_ty: ExportType::Func,
+                }
+                .into());
+            }
             if let Some(inst) = p.instance {
                 inst.get_typed_func::<P, R>(&mut self.store, func)
                     .map(|f| f)
@@ -520,6 +604,7 @@ impl<'a, T> Plugs<'a, T> {
     /// # Errors
     ///
     /// - Returns [`UnknownPlugin::Name`] if a plugin with the requested name couldn't be found.
+    /// - Returns [`ExportNotFound`] if the requested function name couldn't be found inside the plugin.
     /// - May return `wasmtime` errors from [`wasmtime::Instance::get_typed_func`].
     pub fn get_func<P: WasmParams, R: WasmResults>(
         &mut self,

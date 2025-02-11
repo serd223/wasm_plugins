@@ -1,4 +1,4 @@
-use wasmtime::ExternType;
+use wasmtime::{ExternType, ValType};
 
 use crate::PlugId;
 
@@ -148,3 +148,38 @@ impl std::fmt::Display for LinkError {
 }
 
 impl core::error::Error for LinkError {}
+
+/// Expected a plugin's function export's arguements to have a certain signature in a dynamic call but it had a different signature.
+#[derive(Debug)]
+pub struct DynamicDispatchError {
+    pub(crate) func_name: String,
+    pub(crate) plugin_name: String,
+    pub(crate) expected_signature: Vec<ValType>,
+    pub(crate) actual_signature: Vec<ValType>,
+}
+
+impl DynamicDispatchError {
+    pub fn fun_name(&self) -> &String {
+        &self.func_name
+    }
+
+    pub fn plugin_name(&self) -> &String {
+        &self.plugin_name
+    }
+
+    pub fn expected_signature(&self) -> &Vec<ValType> {
+        &self.expected_signature
+    }
+
+    pub fn actual_signature(&self) -> &Vec<ValType> {
+        &self.actual_signature
+    }
+}
+
+impl std::fmt::Display for DynamicDispatchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Expected the arguements of function '{}' in plugin '{}' to have the following signature: {:?} but they had this signature: {:?}", self.func_name, self.plugin_name, self.expected_signature, self.actual_signature)
+    }
+}
+
+impl core::error::Error for DynamicDispatchError {}

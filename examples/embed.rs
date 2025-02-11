@@ -1,6 +1,6 @@
 use wlug::{
     wasmtime::{self, Engine},
-    Plugs,
+    Plugs, Val,
 };
 
 #[derive(Default)]
@@ -47,8 +47,9 @@ fn main() -> wasmtime::Result<()> {
     println!("\n[INFO]: Calling plug1.plug1 with args: 10\nPlugin output:");
     plugs.call::<_, ()>("plug1", "plug1", 10i32)?;
 
-    println!("\n[INFO]: Calling plug2.plug2 with args: 10\nPlugin output:");
-    plugs.call::<_, ()>("plug2", "plug2", 10i32)?;
+    println!("\n[INFO]: Calling plug2.plug2 dynamically with args: 10\nPlugin output:");
+    // Returns `DynamicDispatchError` if the types of arguements don't match with the actual WASM function
+    plugs.call_dynamic("plug2", "plug2", &[Val::I32(10)])?;
 
     println!("\n[INFO]: Calling plug3.plug3 with args: 10\nPlugin output:");
     plugs.call::<_, ()>("plug3", "plug3", 10i32)?;
