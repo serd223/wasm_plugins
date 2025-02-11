@@ -151,15 +151,15 @@ impl core::error::Error for LinkError {}
 
 /// Expected a plugin's function export's arguements to have a certain signature in a dynamic call but it had a different signature.
 #[derive(Debug)]
-pub struct DynamicDispatchError {
+pub struct TypeMismatchError {
     pub(crate) func_name: String,
     pub(crate) plugin_name: String,
     pub(crate) expected_signature: Vec<ValType>,
     pub(crate) actual_signature: Vec<ValType>,
 }
 
-impl DynamicDispatchError {
-    pub fn fun_name(&self) -> &String {
+impl TypeMismatchError {
+    pub fn func_name(&self) -> &String {
         &self.func_name
     }
 
@@ -176,10 +176,10 @@ impl DynamicDispatchError {
     }
 }
 
-impl std::fmt::Display for DynamicDispatchError {
+impl std::fmt::Display for TypeMismatchError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Expected the arguements of function '{}' in plugin '{}' to have the following signature: {:?} but they had this signature: {:?}", self.func_name, self.plugin_name, self.expected_signature, self.actual_signature)
     }
 }
 
-impl core::error::Error for DynamicDispatchError {}
+impl core::error::Error for TypeMismatchError {}

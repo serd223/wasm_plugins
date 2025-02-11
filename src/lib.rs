@@ -491,7 +491,7 @@ impl<'a, T> Plugs<'a, T> {
     ///
     /// - Returns [`UnknownPlugin::Name`] if the specified plugin couldn't be found.
     /// - Returns [`ExportNotFound`] if the requested function name couldn't be found inside the plugin.
-    /// - Returns [`DynamicDispatchError`] if `args` didn't contain the same types as the requested function's arguements.
+    /// - Returns [`TypeMismatchError`] if `args` didn't contain the same types as the requested function's arguements.
     /// - May return `wasmtime` errors from [`wasmtime::Instance::get_func`], [`wasmtime::Func::call`] or other `wasmtime` APIs used internally.
     pub fn call_dynamic(
         &mut self,
@@ -523,7 +523,7 @@ impl<'a, T> Plugs<'a, T> {
                 }
 
                 if arg_types.len() != ftype.params().len() {
-                    return Err(DynamicDispatchError {
+                    return Err(TypeMismatchError {
                         func_name: func.to_string(),
                         plugin_name: plug.to_string(),
                         expected_signature: arg_types,
@@ -534,7 +534,7 @@ impl<'a, T> Plugs<'a, T> {
 
                 for (i, param) in ftype.params().enumerate() {
                     if !param.matches(&arg_types[i]) {
-                        return Err(DynamicDispatchError {
+                        return Err(TypeMismatchError {
                             func_name: func.to_string(),
                             plugin_name: plug.to_string(),
                             expected_signature: arg_types,
