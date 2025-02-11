@@ -469,6 +469,10 @@ impl<'a, T> Plugs<'a, T> {
     }
 
     /// Convenience function for calling function in a plugin and setting the plugin's id as the current
+    ///
+    /// # Errors
+    ///
+    /// - May return [`UnknownPlugin::Name`] or other `wasmtime` errors via [`wlug::Plugs::get_func`].
     pub fn call<P: WasmParams, R: WasmResults>(
         &mut self,
         plug: &str,
