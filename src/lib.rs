@@ -150,6 +150,11 @@ impl<'a, T> Plugs<'a, T> {
 
     /// Extract metadata from the specified module by instantiating a temporary instance and running the
     /// necessary reserved functions (such as `deps`) for metadata extraction.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`ExportNotFound`] if a required export couldn't be found.
+    /// - May return `wasmtime` errors from [`wasmtime::Linker::instantiate`] or [`wasmtime::TypedFunc::call`] or other `wasmtime` APIs used internally.
     pub fn extract_metadata(
         &mut self,
         engine: &Engine,
@@ -242,9 +247,14 @@ impl<'a, T> Plugs<'a, T> {
         })
     }
 
-    /// Load wasm module and add it to the list of plugins. Will throw an error if the plugin name already exists.
+    /// Load wasm module and add it to the list of plugins.
     /// Doesn't perform any linking.
     /// Returns the id of the loaded plugin if load was successful
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`PluginAlreadyExists`] if the requested plugin name already exists.
+    /// - May return [`ExportNotFound`] or other `wasmtime` errors via [`wlug::Plugs::extract_metadata`].
     pub fn load_module(&mut self, module: Module, engine: &Engine) -> wasmtime::Result<PlugId> {
         let id = self.names.len();
         let metadata = self.extract_metadata(engine, &module, id)?;
@@ -271,6 +281,11 @@ impl<'a, T> Plugs<'a, T> {
     }
 
     /// Load plugin from the provided binary and return its id (see `load_module`)
+    ///
+    /// # Errors
+    ///
+    /// - May return [`PluginAlreadyExists`], [`ExportNotFound`] or other `wasmtime` errors via [`wlug::Plugs::extract_metadata`].
+    /// - May return `wasmtime` errors from [`wasmtime::Module::from_binary`].
     pub fn load_binary(
         &mut self,
         bin: impl AsRef<[u8]>,
@@ -282,6 +297,11 @@ impl<'a, T> Plugs<'a, T> {
     }
 
     /// Load plugin from the file system and return its id (see `load_module`)
+    ///
+    /// # Errors
+    ///
+    /// - May return [`PluginAlreadyExists`], [`ExportNotFound`] or other `wasmtime` errors via [`wlug::Plugs::extract_metadata`].
+    /// - May return `wasmtime` errors from [`wasmtime::Module::from_file`].
     pub fn load(
         &mut self,
         file_path: impl AsRef<Path>,
@@ -294,6 +314,11 @@ impl<'a, T> Plugs<'a, T> {
 
     /// Link all plugins with host functions and each other, load order is important (TODO: auto sorting)
     /// and circular dependencies are disallowed (won't change, TODO: report as error)
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`LinkError`] in the case of a linker specific error. (See [`wlug::LinkError`] for more details.)
+    /// - May return `wasmtime` errors from [`wasmtime::Linker::define`] or [`wasmtime::Linker::instantiate`].
     pub fn link(&mut self) -> wasmtime::Result<()> {
         // TODO: perhaps sort the plugins before linking them so that all plugins are guaranteed to be loaded after their dependencies
         // this could also be a chance for us to detect circular dependencies and throw an error in that case since they are disallowed
@@ -461,6 +486,11 @@ impl<'a, T> Plugs<'a, T> {
     }
 
     /// Look up a function by its name and its plugin's id and return the function
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`UnknownPlugin::Id`] if a plugin with the requested id couldn't be found.
+    /// - May return `wasmtime` errors from [`wasmtime::Instance::get_typed_func`].
     pub fn get_func_by_id<P: WasmParams, R: WasmResults>(
         &mut self,
         plug_id: PlugId,
@@ -482,6 +512,11 @@ impl<'a, T> Plugs<'a, T> {
     }
 
     /// Look up a function by name and return the id of the plugin and the function
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`UnknownPlugin::Name`] if a plugin with the requested name couldn't be found.
+    /// - May return `wasmtime` errors from [`wasmtime::Instance::get_typed_func`].
     pub fn get_func<P: WasmParams, R: WasmResults>(
         &mut self,
         plug: &str,
