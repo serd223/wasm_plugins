@@ -114,10 +114,16 @@ impl<'a, T> Plugs<'a, T> {
         }
     }
 
-    /// Returns a reference to the vector that contains loaded plugins in their load order
-    /// This vector can be indexed with PlugId's to access plugins.
-    pub fn items(&self) -> &Vec<Plug<T>> {
+    /// Returns a slice that contains loaded plugins in their load order
+    /// This slice can be indexed with PlugId's to access plugins.
+    pub fn items(&self) -> &[Plug<T>] {
         &self.items
+    }
+
+    /// Returns a mutable slice that contains loaded plugins in their load order
+    /// This slice can be indexed with PlugId's to access plugins.
+    pub fn items_mut(&mut self) -> &mut [Plug<T>] {
+        &mut self.items
     }
 
     /// Returns a reference to the HashMap that is used to lookup plugin ids by their name
