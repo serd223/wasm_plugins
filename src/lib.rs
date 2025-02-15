@@ -60,7 +60,7 @@ pub struct Plugs<'a, T> {
     pub store: Store<PlugContext<T>>,
     items: Vec<Plug<T>>,
     names: HashMap<String, PlugId>,
-    host_fns: Vec<(String, Extern)>,
+    host_fns: Vec<(String, String, Extern)>,
     name_export: &'a str,
     deps_export: &'a str,
     init_export: &'a str,
@@ -132,7 +132,7 @@ impl<'a, T> Plugs<'a, T> {
     }
 
     /// Returns a reference to the list of functions supplied by the host
-    pub fn host_fns(&self) -> &Vec<(String, Extern)> {
+    pub fn host_fns(&self) -> &Vec<(String, String, Extern)> {
         &self.host_fns
     }
 
@@ -142,15 +142,26 @@ impl<'a, T> Plugs<'a, T> {
         name: &str,
         func: impl IntoFunc<PlugContext<T>, Params, Results>,
     ) {
+        self.add_host_fn_in_mod(name, "env", func);
+    }
+
+    /// Adds a new host function in the given module, function parameters and results are passed through the generic types
+    pub fn add_host_fn_in_mod<Params, Results>(
+        &mut self,
+        name: &str,
+        module: &str,
+        func: impl IntoFunc<PlugContext<T>, Params, Results>,
+    ) {
         let func = Func::wrap(&mut self.store, func);
         let func = Into::<Extern>::into(func);
-        self.host_fns.push((name.to_string(), func));
+        self.host_fns
+            .push((module.to_string(), name.to_string(), func));
     }
 
     /// Define host functions in the provided linker
     pub fn link_host(&mut self, linker: &mut Linker<PlugContext<T>>) -> wasmtime::Result<()> {
-        for (name, func) in self.host_fns.iter() {
-            linker.define(&mut self.store, "env", name, func.clone())?;
+        for (module, name, func) in self.host_fns.iter() {
+            linker.define(&mut self.store, module, name, func.clone())?;
         }
         Ok(())
     }
@@ -172,7 +183,7 @@ impl<'a, T> Plugs<'a, T> {
             .imports()
             .into_iter()
             .filter_map(|imp| {
-                let is_host_fn = self.host_fns.iter().any(|(name, _)| name.eq(imp.name()));
+                let is_host_fn = self.host_fns.iter().any(|(_, name, _)| name.eq(imp.name()));
                 if !is_host_fn {
                     Some(imp.name().to_string())
                 } else {
@@ -336,10 +347,10 @@ impl<'a, T> Plugs<'a, T> {
         // convoluted and the circular dependency is deep within the dependency tree.
         for p_id in 0..self.items.len() {
             // Link host functions
-            for (name, func) in self.host_fns.iter() {
+            for (module, name, func) in self.host_fns.iter() {
                 self.items[p_id]
                     .linker
-                    .define(&mut self.store, "env", name, func.clone())?;
+                    .define(&mut self.store, module, name, func.clone())?;
             }
 
             let p = &self.items[p_id];
